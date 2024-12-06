@@ -1,0 +1,116 @@
+<!doctype html>
+<!-- from http://www.speg.com/batman/ -->
+<html lang="en">
+<head>
+	<title>Batman!</title>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/coffee-script/1.6.3/coffee-script.min.js"></script>
+        <script src="//cdnjs.cloudflare.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+        <script src="//batmanjs.org/lib/batman.js"></script>
+        <script src="//batmanjs.org/lib/batman.jquery.js"></script>
+        <script type="text/coffeescript">
+class Super extends Batman.App
+    @root 'heros#index'
+    @route "/stats", "heros#stats"
+    @resources 'hero'
+
+class Super.HerosController extends Batman.Controller
+    routingKey: 'heros'
+    index: ->
+            console.log 'Superheroes ready!'
+    stats: ->
+            console.log 'stats'
+    new: ->
+            console.log 'new'
+            hero = new Super.Hero(Name: '', Power: 0)
+            hero.save()
+            @set 'currentHero', hero
+
+    show: (params) ->
+            Super.Hero.find params.id, (err, hero) =>
+                @set 'currentHero', hero
+            console.log 'show'
+
+    rerollStrength: (node, event, context) ->
+            console.log("node=", node)
+            console.log("event=", event)
+            console.log("ctx=", context)
+            hero = context.get("hero")
+            # 3d6
+            p = Math.floor(1 + Math.random() * 6) + Math.floor(1 + Math.random() * 6) + Math.floor(1 + Math.random() * 6)
+            hero.set("Power", p)
+            hero.save()
+
+    saveHero: (node, event, context) ->
+            hero = context.get('hero')
+            hero.save()
+
+    deleteHero: (node, event, context) ->
+            hero = context.get('hero')
+            hero.destroy()
+            # destroy is async, but we want to repaint before the REST call returns
+            Super.Hero.get("loaded").remove(hero)
+
+class Super.JSONRestStorage extends Batman.RestStorage
+    serializeAsForm: false
+ 
+class Super.Hero extends Batman.Model
+    @persist Super.JSONRestStorage
+    @primaryKey: 'Id'
+    @encode 'Id', 'Name', 'Power'
+    @resourceName: 'hero'
+    @url: '/api/heros'
+    @classAccessor 'statistics', ->
+        heroes =  @get "all"
+        totalPower = 0
+        heroes.forEach (h) ->
+            totalPower += h.get 'Power'
+        avgPower = 0
+        if heroes.length
+            avgPower = totalPower/heroes.length
+        return [heroes.length, avgPower]
+
+window.Super = Super
+console.log("Running super")
+Super.run()
+</script>
+</head>
+<body>
+ 
+<div data-yield="main">
+</div>
+
+<div data-defineview="heros/index">
+      
+    <ul>
+    <li data-foreach-hero="Hero.all">
+    <input type="text" data-bind="hero.Name" data-event-focusout="saveHero"/><span data-bind="hero.Power"></span> <a data-route="hero">(more...)</a><a data-event-click="deleteHero">X</a> 
+    </li>
+    </ul>
+      <button data-route="'/heros/new'">New Hero</button>
+      <a data-route="'/stats'">Stats</a>
+</div>
+ 
+<div data-defineview="heros/stats">
+    Number of heroes: <strong data-bind="Hero.statistics[0]"></strong><br />
+    Average Power: <strong data-bind="Hero.statistics[1]"></strong> <br />
+    <a data-route="'/'">back</a>
+</div>
+
+<div data-defineview="heros/new">
+    <div data-context-hero="currentHero">
+        Hero: <input type="text" data-bind="hero.Name" data-event-focusout="saveHero"/>
+        Power: <span data-bind="hero.Power"></span> <a data-event-click="rerollStrength">(reroll)</a>
+    </div>
+    <a data-route="'/'">back</a>
+</div>
+
+<div data-defineview="heros/show">
+    <div data-context-hero="currentHero">
+        Hero: <strong data-bind="hero.Name"></strong><br />
+        Power: <strong data-bind="hero.Power"></strong><br />
+    </div>
+    <a data-route="'/'">back</a>
+</div>
+ 
+</body>
+</html>
