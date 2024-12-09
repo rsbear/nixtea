@@ -95,6 +95,6 @@ func (m model) viewList() string {
 		}
 	}
 
-	s += m.viewFooter("↑/↓: navigate • enter: select • esc: back • q: quit")
+	s += m.viewFooter("↑/↓: navigate • enter: select • U: update • esc: back • q: quit")
 	return s
 }
