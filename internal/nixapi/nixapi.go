@@ -119,3 +119,15 @@ func (c *Client) GetFormattedPackages(repoURL string) ([]PackageDisplay, error) 
 	}
 	return displayPkgs, nil
 }
+
+func (c *Client) UpdateFlake(repoURL string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "nix", "flake", "update", repoURL)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to update flake: %w\noutput: %s", err, string(output))
+	}
+	return nil
+}

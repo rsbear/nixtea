@@ -14,6 +14,14 @@ type ListState struct {
 	selectedIndex int
 }
 
+type UpdateListFailedMsg struct {
+	err error
+}
+
+type UpdateListSuccessMsg struct {
+	packages []nixapi.PackageDisplay
+}
+
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up":
@@ -24,6 +32,25 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.listState.selectedIndex < len(m.listState.packages)-1 {
 			m.listState.selectedIndex++
 		}
+	case "u", "U":
+		// Start update in a goroutine to avoid blocking UI
+		go func() {
+			if err := m.nixClient.UpdateFlake(m.inputState.urlInput); err != nil {
+				m.program.Send(UpdateListFailedMsg{err: err})
+				return
+			}
+
+			// Reload packages after successful update
+			packages, err := m.nixClient.GetFormattedPackages(m.inputState.urlInput)
+			if err != nil {
+				m.program.Send(UpdateListFailedMsg{err: err})
+				return
+			}
+
+			m.program.Send(UpdateListSuccessMsg{packages: packages})
+		}()
+		return m, nil
+
 	case "enter":
 		if len(m.listState.packages) > 0 {
 			pkg := m.listState.packages[m.listState.selectedIndex]

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"tinyship/peanuts/internal/bubbler"
 	"tinyship/peanuts/internal/db"
 	"tinyship/peanuts/internal/nixapi"
 	"tinyship/peanuts/internal/supervisor"
@@ -127,6 +128,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case timeMsg:
 		m.time = time.Time(msg)
+
+	case bubbler.UpdateListFailedMsg:
+		// Show error in status line
+		m.detailState.outputLines = append(m.detailState.outputLines, LogLine{
+			Text:      fmt.Sprintf("Error updating flake: %v", msg.err),
+			Timestamp: time.Now(),
+		})
+		return m, nil
+
+	case bubbler.UpdateListSuccessMsg:
+		// Update package list and show success message
+		m.listState.packages = msg.packages
+		return m, nil
 
 	case supervisor.NewLogLineMsg:
 		// Handle log messages at the top level
