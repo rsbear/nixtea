@@ -39,6 +39,12 @@
           buildFlags = ["-mod=mod"];
           subPackages = ["cmd/${name}"];
           proxyVendor = true;
+          allowGoReference = true;  # Allow Go to fetch from the network
+          CGO_ENABLED = "0";  # Disable CGO for better compatibility
+          # Explicitly set GOPROXY
+          preBuild = ''
+            export GOPROXY=https://proxy.golang.org,direct
+          '';
         };
       };
     };
