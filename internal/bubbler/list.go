@@ -14,14 +14,6 @@ type ListState struct {
 	selectedIndex int
 }
 
-type UpdateListFailedMsg struct {
-	err error
-}
-
-type UpdateListSuccessMsg struct {
-	packages []nixapi.PackageDisplay
-}
-
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "up":

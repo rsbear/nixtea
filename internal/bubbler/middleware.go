@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"tinyship/peanuts/internal/bubbler"
 	"tinyship/peanuts/internal/db"
 	"tinyship/peanuts/internal/nixapi"
 	"tinyship/peanuts/internal/supervisor"
@@ -21,6 +20,14 @@ import (
 )
 
 type timeMsg time.Time
+
+type UpdateListFailedMsg struct {
+	err error
+}
+
+type UpdateListSuccessMsg struct {
+	packages []nixapi.PackageDisplay
+}
 
 type Pane int
 
@@ -129,7 +136,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case timeMsg:
 		m.time = time.Time(msg)
 
-	case bubbler.UpdateListFailedMsg:
+	case UpdateListFailedMsg:
 		// Show error in status line
 		m.detailState.outputLines = append(m.detailState.outputLines, LogLine{
 			Text:      fmt.Sprintf("Error updating flake: %v", msg.err),
@@ -137,7 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		return m, nil
 
-	case bubbler.UpdateListSuccessMsg:
+	case UpdateListSuccessMsg:
 		// Update package list and show success message
 		m.listState.packages = msg.packages
 		return m, nil
