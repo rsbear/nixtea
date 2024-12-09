@@ -45,7 +45,7 @@ func (c *Client) GetSystemPackages(repoURL string) (map[string]PackageInfo, erro
 	defer cancel()
 
 	// Create command with context
-	cmd := exec.CommandContext(ctx, "nix", "flake", "show", "--json", repoURL)
+	cmd := exec.CommandContext(ctx, "nix", "flake", "show", "--no-write-lock-file", "--json", repoURL)
 
 	// Create a channel for the result
 	type result struct {
@@ -121,10 +121,11 @@ func (c *Client) GetFormattedPackages(repoURL string) ([]PackageDisplay, error) 
 }
 
 func (c *Client) UpdateFlake(repoURL string) error {
+	fmt.Println("Updating flake...")
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "nix", "flake", "update", "--flake", "--no-write-lock-file", repoURL)
+	cmd := exec.CommandContext(ctx, "nix", "flake", "update", "--no-write-lock-file", "--flake", repoURL)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to update flake: %w\noutput: %s", err, string(output))
