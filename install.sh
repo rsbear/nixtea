@@ -30,7 +30,7 @@ install_binary() {
   if [ -z "$pkg_path" ]; then
     echo "Error: Failed to build nixtea package"
     exit 1
-  }
+  fi
 
   ln -sf "$pkg_path/bin/nixtea" /usr/local/bin/nixtea
 }
