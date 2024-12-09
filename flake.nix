@@ -19,13 +19,13 @@
         system,
         ...
       }: let
-        name = "peanuts";
+        name = "nixtea";
         version = "latest";
         vendorHash = null; # update whenever go.mod changes
         mkGoDevShell = inputs.devshells.lib.${system}.mkGoDevShell;
       in {
         devShells.default = mkGoDevShell {
-          cmd = "cd cmd/peanuts && go run main.go";
+          cmd = "cd cmd/${name} && go run main.go";
           hotReload = false;
           extraPackages = with pkgs; [
             nixpkgs-fmt
