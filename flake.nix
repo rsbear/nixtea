@@ -35,6 +35,7 @@
         packages.default = pkgs.buildGoModule {
           inherit name vendorHash;
           src = ./.;
+          buildFlags = ["-mod=mod"];
           subPackages = ["cmd/${name}"];
         };
       };
