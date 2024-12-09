@@ -39,27 +39,31 @@
           buildFlags = ["-mod=mod"];
           subPackages = ["cmd/${name}"];
 
-          # Remove deprecated buildFlags
-          tags = [""];  # Add any necessary build tags here
-          ldflags = ["-s" "-w"];
+          # Use tags and ldflags instead of buildFlags
+          tags = [""];
+          ldflags = [
+            "-s" 
+            "-w"
+            # Set the SSH key path at compile time
+            "-X main.defaultHostKeyPath=/etc/nixtea/ssh/id_ed25519"
+          ];
           
-          allowGoReference = true;  # Allow Go to fetch from the network
+          subPackages = ["cmd/${name}"];
           proxyVendor = true;
           
           # Enable CGO for sqlite support
           CGO_ENABLED = "1";
           
-          # Add sqlite to build inputs
+          # Add build dependencies
           nativeBuildInputs = with pkgs; [ 
             pkg-config
             sqlite
+            openssh
           ];
-          
-          # Create SSH directory and generate key during build
-          preBuild = ''
-            export GOPROXY=https://proxy.golang.org,direct
-            
-            # Create SSH directory in the package
+
+          # Setup directories and generate SSH key
+          postInstall = ''
+            # Create required directories
             mkdir -p $out/etc/nixtea/ssh
             
             # Generate SSH host key
@@ -72,11 +76,11 @@
             chmod 600 $out/etc/nixtea/ssh/id_ed25519
           '';
 
-          # Update the host key path in the code
-          postBuild = ''
-            substituteInPlace $GOPATH/bin/${name} \
-              --replace '.ssh/id_ed25519' '/etc/nixtea/ssh/id_ed25519'
+          # Set GOPROXY
+          preBuild = ''
+            export GOPROXY=https://proxy.golang.org,direct
           '';
+
         };
       };
     };
