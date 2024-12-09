@@ -33,10 +33,12 @@
         };
 
         packages.default = pkgs.buildGoModule {
-          inherit name vendorHash;
+          inherit name;
           src = ./.;
+          vendorHash = null;
           buildFlags = ["-mod=mod"];
           subPackages = ["cmd/${name}"];
+          proxyVendor = true;
         };
       };
     };
