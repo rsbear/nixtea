@@ -48,7 +48,6 @@
             "-X main.defaultHostKeyPath=/etc/nixtea/ssh/id_ed25519"
           ];
           
-          subPackages = ["cmd/${name}"];
           proxyVendor = true;
           
           # Enable CGO for sqlite support
