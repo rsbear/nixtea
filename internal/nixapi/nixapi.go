@@ -124,7 +124,7 @@ func (c *Client) UpdateFlake(repoURL string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "nix", "flake", "update", repoURL)
+	cmd := exec.CommandContext(ctx, "nix", "flake", "update", "--flake", "--no-write-lock-file", repoURL)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to update flake: %w\noutput: %s", err, string(output))
