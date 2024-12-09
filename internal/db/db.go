@@ -5,13 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"walross/nixtea/internal/config"
 
 	_ "github.com/mattn/go-sqlite3"
-)
-
-const (
-	dbDir  = "/tmp"
-	dbName = "tinygit.db"
 )
 
 // DB handles our SQLite connection and operations
@@ -20,13 +16,13 @@ type DB struct {
 }
 
 // New creates a new database manager
-func New() (*DB, error) {
+func New(cfg *config.Config) (*DB, error) {
 	// Ensure directory exists
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.DBDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
-	dbPath := filepath.Join(dbDir, dbName)
+	dbPath := filepath.Join(cfg.DBDir, cfg.DBName)
 
 	// Open database connection
 	db, err := sql.Open("sqlite3", dbPath)

@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"tinyship/peanuts/internal/nixapi"
+	"walross/nixtea/internal/nixapi"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"

@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"tinyship/peanuts/internal/db"
-	"tinyship/peanuts/internal/nixapi"
-	"tinyship/peanuts/internal/supervisor"
+	"walross/nixtea/internal/config"
+	"walross/nixtea/internal/db"
+	"walross/nixtea/internal/nixapi"
+	"walross/nixtea/internal/supervisor"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/log"
@@ -51,10 +52,11 @@ type model struct {
 	program     *tea.Program
 	sess        ssh.Session
 	sv          *supervisor.Supervisor
+	cfg         *config.Config
 }
 
-func BubblerMiddleware(sv *supervisor.Supervisor) wish.Middleware {
-	db, err := db.New()
+func BubblerMiddleware(sv *supervisor.Supervisor, cfg *config.Config) wish.Middleware {
+	db, err := db.New(cfg)
 	if err != nil {
 		log.Error("Failed to initialize database", "error", err)
 		return nil
@@ -98,6 +100,7 @@ func BubblerMiddleware(sv *supervisor.Supervisor) wish.Middleware {
 			nixClient: nixClient,
 			program:   nil,
 			sv:        sv,
+			cfg:       cfg,
 		}
 
 		if savedURL != "" {

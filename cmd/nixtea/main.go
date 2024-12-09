@@ -9,8 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"tinyship/peanuts/internal/bubbler"
-	"tinyship/peanuts/internal/supervisor"
+	"walross/nixtea/internal/bubbler"
+	"walross/nixtea/internal/config"
+	"walross/nixtea/internal/supervisor"
 
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
@@ -24,13 +25,18 @@ const (
 )
 
 func main() {
+	cfg, err := config.NewCfg()
+	if err != nil {
+		log.Error("Failed to initialize configuration", "error", err)
+		os.Exit(1)
+	}
 	sv := supervisor.NewSupervisor()
 
 	s, err := wish.NewServer(
-		wish.WithAddress(net.JoinHostPort(host, port)),
-		wish.WithHostKeyPath(".ssh/id_ed25519"),
+		wish.WithAddress(net.JoinHostPort(cfg.Host, cfg.Port)),
+		wish.WithHostKeyPath(cfg.HostKeyPath),
 		wish.WithMiddleware(
-			bubbler.BubblerMiddleware(sv),
+			bubbler.BubblerMiddleware(sv, cfg),
 			logging.Middleware(),
 		),
 	)

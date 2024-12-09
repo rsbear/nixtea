@@ -23,6 +23,33 @@
         version = "latest";
         vendorHash = null; # update whenever go.mod changes
         mkGoDevShell = inputs.devshells.lib.${system}.mkGoDevShell;
+
+        env = {
+          local = {
+            HOST = "localhost";
+            PORT = "23234";
+            HOST_KEY_PATH = "/tmp/nixtea/ssh/id_ed25519";
+            DB_DIR = "/tmp";
+            DB_NAME = "nixtea.db";
+          };
+          prod = {
+            HOST = "0.0.0.0";
+            PORT = "23234";
+            HOST_KEY_PATH = "/etc/nixtea/ssh/id_ed25519";
+            DB_DIR = "/var/lib/nixtea";
+            DB_NAME = "nixtea.db";
+          };
+        };
+
+        # Helper function to create --set arguments for wrapProgram
+        mkSetFlags = vars: builtins.concatStringsSep " " (
+          builtins.attrValues (builtins.mapAttrs (name: value: "--set ${name} \"${value}\"") vars)
+        );
+
+        # Helper function to create export statements
+        mkExports = vars: builtins.concatStringsSep "\n" (
+          builtins.attrValues (builtins.mapAttrs (name: value: "export ${name}=\"${value}\"") vars)
+        );
       in {
         devShells.default = mkGoDevShell {
           cmd = "cd cmd/${name} && go run main.go";
@@ -30,6 +57,7 @@
           extraPackages = with pkgs; [
             nixpkgs-fmt
           ];
+          env = env.local;
         };
 
         packages.default = pkgs.buildGoModule {
@@ -78,6 +106,11 @@
           # Set GOPROXY
           preBuild = ''
             export GOPROXY=https://proxy.golang.org,direct
+          '';
+
+          postFixup = ''
+            wrapProgram $out/bin/${name} \
+              ${mkSetFlags env.prod}
           '';
 
         };

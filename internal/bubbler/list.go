@@ -2,7 +2,7 @@ package bubbler
 
 import (
 	"fmt"
-	"tinyship/peanuts/internal/nixapi"
+	"walross/nixtea/internal/nixapi"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"

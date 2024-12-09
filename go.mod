@@ -1,4 +1,4 @@
-module tinyship/peanuts
+module walross/nixtea
 
 go 1.21.4
 

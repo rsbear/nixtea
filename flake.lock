@@ -8,11 +8,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1733716716,
-        "narHash": "sha256-axQQVbQmNdf6xUWW/yzTvlx2aEQ3N99DB3dBEBoVEdo=",
+        "lastModified": 1733785764,
+        "narHash": "sha256-JPIWsx89ezN7PQkcQ8XWQuB7cfKkuqqcHjqounlk9zA=",
         "ref": "refs/heads/master",
-        "rev": "e664fcb62a70fae5ac7230abb4f9d5618b1f8f1f",
-        "revCount": 7,
+        "rev": "ac4a286bb0cee4999ff9f572b1f1a5184af2a47a",
+        "revCount": 10,
         "type": "git",
         "url": "git://5.161.202.250/nix-dev-shells"
       },
