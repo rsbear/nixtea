@@ -35,7 +35,7 @@
           prod = {
             HOST = "0.0.0.0";
             PORT = "23234";
-            HOST_KEY_PATH = "/etc/nixtea/ssh/id_ed25519";
+            HOST_KEY_PATH = "/var/lib/nixtea/ssh/id_ed25519";
             DB_DIR = "/var/lib/nixtea";
             DB_NAME = "nixtea.db";
           };
