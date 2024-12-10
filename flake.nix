@@ -69,12 +69,7 @@
 
           # Use tags and ldflags instead of buildFlags
           tags = [""];
-          ldflags = [
-            "-s" 
-            "-w"
-            # Set the SSH key path at compile time
-            "-X main.defaultHostKeyPath=/etc/nixtea/ssh/id_ed25519"
-          ];
+          ldflags = [ "-s" "-w" ];
           
           proxyVendor = true;
           
@@ -84,26 +79,8 @@
           # Add build dependencies
           nativeBuildInputs = with pkgs; [ 
             pkg-config
-            sqlite
-            openssh
             makeWrapper
           ];
-
-
-          # Setup directories and generate SSH key
-          postInstall = ''
-            # Create required directories
-            mkdir -p $out/etc/nixtea/ssh
-            
-            # Generate SSH host key
-            ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -f $out/etc/nixtea/ssh/id_ed25519 -N ""
-            
-            # Set proper permissions
-            chmod 755 $out/etc
-            chmod 755 $out/etc/nixtea
-            chmod 700 $out/etc/nixtea/ssh
-            chmod 600 $out/etc/nixtea/ssh/id_ed25519
-          '';
 
           # Set GOPROXY
           preBuild = ''
