@@ -2,7 +2,9 @@ package bubbler
 
 import (
 	"fmt"
+	"time"
 	"walross/nixtea/internal/nixapi"
+	"walross/nixtea/internal/supervisor"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,22 +26,36 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.listState.selectedIndex < len(m.listState.packages)-1 {
 			m.listState.selectedIndex++
 		}
+
 	case "u", "U":
 		// Start update in a goroutine to avoid blocking UI
 		go func() {
 			if err := m.nixClient.UpdateFlake(m.inputState.urlInput); err != nil {
-				m.program.Send(UpdateListFailedMsg{err: err})
+				// Just broadcast the error as a log message
+				m.sv.Broadcast(supervisor.NewLogLineMsg{
+					Text:      fmt.Sprintf("Error updating flake: %v", err),
+					Timestamp: time.Now(),
+				})
 				return
 			}
 
 			// Reload packages after successful update
 			packages, err := m.nixClient.GetFormattedPackages(m.inputState.urlInput)
 			if err != nil {
-				m.program.Send(UpdateListFailedMsg{err: err})
+				m.sv.Broadcast(supervisor.NewLogLineMsg{
+					Text:      fmt.Sprintf("Error getting packages: %v", err),
+					Timestamp: time.Now(),
+				})
 				return
 			}
 
-			m.program.Send(UpdateListSuccessMsg{packages: packages})
+			// Update the packages directly in the model
+			m.listState.packages = packages
+
+			m.sv.Broadcast(supervisor.NewLogLineMsg{
+				Text:      "Flake updated successfully",
+				Timestamp: time.Now(),
+			})
 		}()
 		return m, nil
 

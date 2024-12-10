@@ -100,7 +100,6 @@ func BubblerMiddleware(sv *supervisor.Supervisor, cfg *config.Config) wish.Middl
 			nixClient: nixClient,
 			program:   nil,
 			sv:        sv,
-			cfg:       cfg,
 		}
 
 		if savedURL != "" {

@@ -19,6 +19,19 @@ func NewSupervisor() *Supervisor {
 	}
 }
 
+func (s *Supervisor) Broadcast(msg tea.Msg) {
+	s.mu.RLock()
+	programs := make([]*tea.Program, len(s.programs))
+	copy(programs, s.programs)
+	s.mu.RUnlock()
+
+	for _, p := range programs {
+		if p != nil {
+			p.Send(msg)
+		}
+	}
+}
+
 func (s *Supervisor) broadcast(msg tea.Msg) {
 	s.mu.RLock()
 	programs := make([]*tea.Program, len(s.programs))

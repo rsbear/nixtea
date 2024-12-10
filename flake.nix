@@ -86,7 +86,9 @@
             pkg-config
             sqlite
             openssh
+            makeWrapper
           ];
+
 
           # Setup directories and generate SSH key
           postInstall = ''
