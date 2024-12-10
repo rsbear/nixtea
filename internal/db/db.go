@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"walross/nixtea/internal/config"
 
+	"github.com/charmbracelet/log"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -83,22 +85,29 @@ func (m *DB) SaveRepoURL(url string) error {
 	if err != nil {
 		return fmt.Errorf("failed to save repo URL: %w", err)
 	}
+	log.Infof("Saved repo URL: %s", url)
 	return nil
 }
 
-// GetRepoURL retrieves the stored repository URL
 func (m *DB) GetRepoURL() (string, error) {
+	log.Info("Attempting to retrieve repo URL")
+
 	var url string
 	err := m.QueryRow(`
-		SELECT value FROM state
-		WHERE key = 'repo_url'
-	`).Scan(&url)
+        SELECT value FROM state
+        WHERE key = 'repo_url'
+    `).Scan(&url)
+
 	if err == sql.ErrNoRows {
+		log.Info("No repo URL found in database")
 		return "", nil
 	}
 	if err != nil {
+		log.Error("Failed to get repo URL", "error", err)
 		return "", fmt.Errorf("failed to get repo URL: %w", err)
 	}
+
+	log.Info("Successfully retrieved repo URL", "url", url)
 	return url, nil
 }
 

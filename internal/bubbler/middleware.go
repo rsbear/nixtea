@@ -64,9 +64,14 @@ func BubblerMiddleware(sv *supervisor.Supervisor, cfg *config.Config) wish.Middl
 
 	nixClient := nixapi.NewClient(getCurrentSystem())
 
+	log.Info("Attempting to load saved repo URL")
 	savedURL, err := db.GetRepoURL()
 	if err != nil {
 		log.Error("Failed to get saved URL", "error", err)
+	} else if savedURL == "" {
+		log.Info("No saved URL found")
+	} else {
+		log.Info("Found saved URL", "url", savedURL)
 	}
 
 	newProg := func(m tea.Model, opts ...tea.ProgramOption) *tea.Program {
