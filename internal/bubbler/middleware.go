@@ -13,6 +13,7 @@ import (
 	"walross/nixtea/internal/supervisor"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
@@ -250,12 +251,29 @@ func stringOr(s, fallback string) string {
 }
 
 func (m model) viewHeader() string {
-	return fmt.Sprintf("%s %s\n",
+	header := fmt.Sprintf("%s %s",
 		termenv.String(" nixtea ").Background(termenv.ANSIBrightMagenta).Foreground(termenv.ANSIWhite),
 		termenv.String(stringOr(m.inputState.urlInput, "repo not set")).Foreground(termenv.ANSIBrightBlack))
+
+	// Use lipgloss to create a consistent header style
+	headerStyle := lipgloss.NewStyle().
+		Padding(0, 0, 1, 0) // Add padding below header
+
+	return headerStyle.Render(header)
 }
 
 func (m model) viewFooter(help string) string {
 	return fmt.Sprintf("\n%s",
 		termenv.String(help).Foreground(termenv.ANSIBrightBlack))
+}
+
+// Add helper function to calculate view heights
+func (m model) getViewHeights() (headerHeight, footerHeight, contentHeight int) {
+	// Get actual heights from rendered content
+	headerHeight = strings.Count(m.viewHeader(), "\n") + 1
+	footerHeight = strings.Count(m.viewFooter(""), "\n") + 1
+
+	// Calculate remaining space for content
+	contentHeight = m.height - headerHeight - footerHeight
+	return
 }

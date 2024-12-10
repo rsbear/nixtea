@@ -79,21 +79,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) viewList() string {
 	var s string
 	s += m.viewHeader()
-
-	// Calculate available space for list
-	contentHeight := m.height - 4 // Account for header (2) and footer (2)
+	s += "\n" // Add space after header
 
 	for i, pkg := range m.listState.packages {
-		if i >= contentHeight {
-			break
-		}
-
-		// Get actual state if we have a PID
-		var stateStr string
-
-		line := fmt.Sprintf("• %s%s %s",
+		line := fmt.Sprintf("• %s %s",
 			pkg.Name,
-			stateStr,
 			termenv.String("#"+pkg.Key).Foreground(termenv.ANSIBrightBlack))
 
 		if i == m.listState.selectedIndex {
@@ -103,6 +93,7 @@ func (m model) viewList() string {
 		}
 	}
 
+	s += "\n" // Add space before footer
 	s += m.viewFooter("↑/↓: navigate • enter: select • U: update • esc: back • q: quit")
 	return s
 }
