@@ -61,16 +61,24 @@ func (s *Supervisor) StartService(name, key, repoURL string) error {
 
 	s.logProcessMapState("Before starting service")
 
-	cmd := exec.Command("nix", "run", fmt.Sprintf("%s#%s", repoURL, key))
+	// Create command with proper nix run syntax
+	cmd := exec.Command("nix", "run", "--no-write-lock-file", fmt.Sprintf("%s#%s", repoURL, key))
 
 	// Create a new process group
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
 
+	// Set up stdout pipe
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("stdout pipe error: %w", err)
+	}
+
+	// Set up stderr pipe
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("stderr pipe error: %w", err)
 	}
 
 	proc := &Process{
@@ -97,10 +105,12 @@ func (s *Supervisor) StartService(name, key, repoURL string) error {
 		return fmt.Errorf("failed to get process group: %w", err)
 	}
 
+	// Handle stdout in a goroutine
 	go func() {
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
 			text := scanner.Text()
+			fmt.Println("stdout", text)
 			s.broadcast(NewLogLineMsg{
 				ProcessKey: key,
 				Text:       text,
@@ -113,15 +123,44 @@ func (s *Supervisor) StartService(name, key, repoURL string) error {
 		}
 	}()
 
+	// Handle stderr in a goroutine
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			text := scanner.Text()
+			fmt.Println("stderr", text)
+			s.broadcast(NewLogLineMsg{
+				ProcessKey: key,
+				Text:       fmt.Sprintf("[stderr] %s", text),
+				Timestamp:  time.Now(),
+			})
+
+			proc.mu.Lock()
+			proc.output = append(proc.output, text)
+			proc.mu.Unlock()
+		}
+	}()
+
+	// Monitor process completion in a goroutine
 	go func() {
 		err := cmd.Wait()
+		proc.mu.Lock()
 		proc.isRunning = false
-		proc.Done <- err
+		proc.mu.Unlock()
+
 		s.broadcast(NewLogLineMsg{
 			ProcessKey: key,
 			Text:       fmt.Sprintf("Process exited: %v", err),
 			Timestamp:  time.Now(),
 		})
+
+		// Send completion status to Done channel
+		proc.Done <- err
+
+		// Keep the process in the map but marked as not running
+		// This allows viewing logs after completion
+		log.Info("Process completed", "key", key, "error", err)
+		s.logProcessMapState("After process completion")
 	}()
 
 	log.Info("Added process to map", "key", key, "pid", cmd.Process.Pid)
