@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"walross/nixtea/internal/bubbler"
+	"walross/nixtea/internal/cli"
 	"walross/nixtea/internal/config"
 	"walross/nixtea/internal/supervisor"
 
@@ -36,6 +37,7 @@ func main() {
 		wish.WithAddress(net.JoinHostPort(cfg.Host, cfg.Port)),
 		wish.WithHostKeyPath(cfg.HostKeyPath),
 		wish.WithMiddleware(
+			cli.CreateMiddleware(sv, cfg),
 			bubbler.BubblerMiddleware(sv, cfg),
 			logging.Middleware(),
 		),

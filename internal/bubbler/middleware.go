@@ -87,6 +87,10 @@ func BubblerMiddleware(sv *supervisor.Supervisor, cfg *config.Config) wish.Middl
 	}
 
 	teaHandler := func(s ssh.Session) *tea.Program {
+		if len(s.Command()) > 0 {
+			return nil
+		}
+
 		pty, _, active := s.Pty()
 		if !active {
 			wish.Fatalln(s, "no active terminal")
@@ -134,7 +138,6 @@ func BubblerMiddleware(sv *supervisor.Supervisor, cfg *config.Config) wish.Middl
 }
 
 func (m model) Init() tea.Cmd {
-
 	return nil
 }
 
