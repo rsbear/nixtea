@@ -3,7 +3,7 @@
 
 
 ### cli to make
-    ssh nixtea (lists saved repos, add repo input, set active repo)
+    ssh nixtea ctx (lists saved repos, add repo input, set active repo)
     ssh nixtea ps (lists packages for a repo)
     ssh nixtea <pkg key> run (starts the child process)
     ssh nixtea <pkg key> stop (stops the child process)
