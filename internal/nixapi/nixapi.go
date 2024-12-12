@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -32,11 +33,35 @@ type Client struct {
 }
 
 // NewClient creates a new Nix API client
-func NewClient(system string) *Client {
+func NewClient() *Client {
 	return &Client{
-		system:  system,
+		system:  getCurrentSystem(),
 		timeout: 30 * time.Second,
 	}
+}
+
+func getCurrentSystem() string {
+	var nixArch, nixOS string
+
+	switch runtime.GOARCH {
+	case "amd64":
+		nixArch = "x86_64"
+	case "arm64":
+		nixArch = "aarch64"
+	default:
+		nixArch = runtime.GOARCH
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		nixOS = "darwin"
+	case "linux":
+		nixOS = "linux"
+	default:
+		nixOS = runtime.GOOS
+	}
+
+	return fmt.Sprintf("%s-%s", nixArch, nixOS)
 }
 
 // GetSystemPackages retrieves and filters packages for the current system

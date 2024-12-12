@@ -2,7 +2,6 @@ package bubbler
 
 import (
 	"fmt"
-	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -63,7 +62,7 @@ func BubblerMiddleware(sv *supervisor.Supervisor, cfg *config.Config) wish.Middl
 		return nil
 	}
 
-	nixClient := nixapi.NewClient(getCurrentSystem())
+	nixClient := nixapi.NewClient()
 
 	log.Info("Attempting to load saved repo URL")
 	savedURL, err := db.GetRepoURL()
@@ -220,30 +219,6 @@ func (m model) View() string {
 		return m.viewDetail()
 	}
 	return ""
-}
-
-func getCurrentSystem() string {
-	var nixArch, nixOS string
-
-	switch runtime.GOARCH {
-	case "amd64":
-		nixArch = "x86_64"
-	case "arm64":
-		nixArch = "aarch64"
-	default:
-		nixArch = runtime.GOARCH
-	}
-
-	switch runtime.GOOS {
-	case "darwin":
-		nixOS = "darwin"
-	case "linux":
-		nixOS = "linux"
-	default:
-		nixOS = runtime.GOOS
-	}
-
-	return fmt.Sprintf("%s-%s", nixArch, nixOS)
 }
 
 func stringOr(s, fallback string) string {

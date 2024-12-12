@@ -46,6 +46,7 @@ func New(cfg *config.Config) (*DB, error) {
 
 // initSchema creates the necessary tables if they don't exist
 func (m *DB) initSchema() error {
+	// Initialize state table
 	_, err := m.Exec(`
 		CREATE TABLE IF NOT EXISTS state (
 			key TEXT PRIMARY KEY,
@@ -58,7 +59,7 @@ func (m *DB) initSchema() error {
 		return fmt.Errorf("failed to create state table: %w", err)
 	}
 
-	// Create trigger to update updated_at timestamp
+	// Create state table trigger
 	_, err = m.Exec(`
 		CREATE TRIGGER IF NOT EXISTS update_state_timestamp
 		AFTER UPDATE ON state
@@ -69,6 +70,11 @@ func (m *DB) initSchema() error {
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to create timestamp trigger: %w", err)
+	}
+
+	// Initialize repositories table
+	if err := m.initReposSchema(); err != nil {
+		return fmt.Errorf("failed to initialize repositories schema: %w", err)
 	}
 
 	return nil
