@@ -158,13 +158,17 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 			// Try to start the service first
 			err = svcMgr.Start(pkgKey)
 			if err == nil {
-				cmd.Printf("Service %s started successfully\n", pkgKey)
+				cmd.Printf("✓ Service %s is now running\n\n", pkgKey)
+				cmd.Printf("To check service status:\n")
+				cmd.Printf("  nixtea %s status\n", pkgKey)
+				cmd.Printf("\nTo view service logs:\n")
+				cmd.Printf("  nixtea %s logs\n", pkgKey)
 				return nil
 			}
 
 			// If service isn't installed, build and install it
 			if strings.Contains(err.Error(), "not installed") {
-				cmd.Printf("Service not installed, installing now...\n")
+				cmd.Printf("→ Installing service %s...\n", pkgKey)
 
 				// Build the package
 				buildCmd := exec.Command("nix", "build", "--no-write-lock-file", fullPkgURL, "--print-out-paths")
@@ -189,8 +193,7 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 					return fmt.Errorf("no binaries found in %s", binDir)
 				}
 
-				// If there's exactly one binary, use it
-				binPath := filepath.Join(binDir, entries[0].Name())
+				// Use first binary if there's only one, otherwise error
 				if len(entries) > 1 {
 					cmd.Printf("Multiple binaries found in %s:\n", binDir)
 					for _, entry := range entries {
@@ -199,17 +202,24 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 					return fmt.Errorf("multiple binaries found, please specify which one to run")
 				}
 
-				// Install the service
+				binPath := filepath.Join(binDir, entries[0].Name())
+
+				// Install and start the service
+				cmd.Printf("→ Registering service...\n")
 				if err := svcMgr.Install(pkgKey, binPath); err != nil {
 					return fmt.Errorf("failed to install service: %w", err)
 				}
 
-				// Try to start it
+				cmd.Printf("→ Starting service...\n")
 				if err := svcMgr.Start(pkgKey); err != nil {
 					return fmt.Errorf("service installed but failed to start: %w", err)
 				}
 
-				cmd.Printf("Service %s installed and started successfully\n", pkgKey)
+				cmd.Printf("\n✓ Service %s is now running\n\n", pkgKey)
+				cmd.Printf("To check service status:\n")
+				cmd.Printf("  nixtea %s status\n", pkgKey)
+				cmd.Printf("\nTo view service logs:\n")
+				cmd.Printf("  nixtea %s logs\n", pkgKey)
 				return nil
 			}
 

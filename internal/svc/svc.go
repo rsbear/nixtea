@@ -1,4 +1,5 @@
 // file: internal/svc/svc.go
+
 package svc
 
 import (
@@ -6,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/kardianos/service"
 )
@@ -25,6 +27,7 @@ func NewProgram(binPath string) *Program {
 
 // Start implements service.Interface
 func (p *Program) Start(s service.Service) error {
+	// Start in a goroutine so it doesn't block
 	go p.run()
 	return nil
 }
@@ -33,31 +36,37 @@ func (p *Program) Start(s service.Service) error {
 func (p *Program) Stop(s service.Service) error {
 	close(p.quit)
 	if p.cmd != nil && p.cmd.Process != nil {
-		return p.cmd.Process.Signal(os.Interrupt) // Most Nix binaries handle this well
+		return p.cmd.Process.Signal(os.Interrupt)
 	}
 	return nil
 }
 
 func (p *Program) run() {
-	for {
-		select {
-		case <-p.quit:
-			return
-		default:
-			fmt.Printf("svc.run %s", p.binPath)
-			cmd := exec.Command(p.binPath)
-			cmd.Stdout = os.Stdout // Let systemd/service manager handle logging
-			cmd.Stderr = os.Stderr
-			p.cmd = cmd
+	cmd := exec.Command(p.binPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	p.cmd = cmd
 
-			fmt.Printf("std out %s", p.cmd.Stdout)
-			fmt.Printf("std err %s", p.cmd.Stderr)
-
-			if err := cmd.Run(); err != nil {
-				fmt.Printf("Process exited with error: %v\n", err)
-			}
-		}
+	// Start the command (non-blocking)
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Failed to start process: %v\n", err)
+		return
 	}
+
+	// Wait for either quit signal or process completion
+	go func() {
+		<-p.quit
+		if p.cmd != nil && p.cmd.Process != nil {
+			p.cmd.Process.Signal(os.Interrupt)
+		}
+	}()
+
+	// Wait for process in a separate goroutine
+	go func() {
+		if err := cmd.Wait(); err != nil {
+			fmt.Printf("Process exited with error: %v\n", err)
+		}
+	}()
 }
 
 type Manager struct {
@@ -75,7 +84,6 @@ func (m *Manager) Install(name, binPath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Basic sanity check
 	if _, err := os.Stat(binPath); err != nil {
 		return fmt.Errorf("binary not found at %s: %w", binPath, err)
 	}
@@ -104,7 +112,21 @@ func (m *Manager) Start(name string) error {
 	if !exists {
 		return fmt.Errorf("service %s not installed", name)
 	}
-	return svc.Run()
+
+	// Start the service in a goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		errChan <- svc.Run()
+	}()
+
+	// Wait a short time for any immediate errors
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("service failed to start: %w", err)
+	case <-time.After(100 * time.Millisecond):
+		// If no immediate error, assume service started successfully
+		return nil
+	}
 }
 
 func (m *Manager) Stop(name string) error {
