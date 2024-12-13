@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,9 +14,15 @@ import (
 )
 
 type Program struct {
-	binPath string
-	cmd     *exec.Cmd
-	quit    chan struct{}
+	binPath   string
+	cmd       *exec.Cmd
+	quit      chan struct{}
+	startTime time.Time
+}
+
+type ResourceUsage struct {
+	Memory string
+	CPU    string
 }
 
 func NewProgram(binPath string) *Program {
@@ -28,6 +35,7 @@ func NewProgram(binPath string) *Program {
 // Start implements service.Interface
 func (p *Program) Start(s service.Service) error {
 	// Start in a goroutine so it doesn't block
+	p.startTime = time.Now() // Set the start time when service starts
 	go p.run()
 	return nil
 }
@@ -80,9 +88,20 @@ func NewManager() *Manager {
 	}
 }
 
+// getServiceName ensures consistent service name formatting
+func (m *Manager) getServiceName(name string) string {
+	// If it already has the prefix, don't add it again
+	if strings.HasPrefix(name, "nixtea-") {
+		return name
+	}
+	return "nixtea-" + name
+}
+
 func (m *Manager) Install(name, binPath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	serviceName := m.getServiceName(name)
 
 	if _, err := os.Stat(binPath); err != nil {
 		return fmt.Errorf("binary not found at %s: %w", binPath, err)
@@ -90,9 +109,9 @@ func (m *Manager) Install(name, binPath string) error {
 
 	program := NewProgram(binPath)
 	config := &service.Config{
-		Name:        fmt.Sprintf("nixtea-%s", name),
-		DisplayName: fmt.Sprintf("Nixtea - %s", name),
+		Name:        serviceName,
 		Description: fmt.Sprintf("Nix package service for %s", name),
+		Executable:  binPath,
 	}
 
 	svc, err := service.New(program, config)
@@ -100,13 +119,17 @@ func (m *Manager) Install(name, binPath string) error {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
 
-	m.services[name] = svc
+	fmt.Println("service.New success serviceName", serviceName)
+
+	m.services[serviceName] = svc
+	svc.Platform()
 	return nil
 }
 
 func (m *Manager) Start(name string) error {
 	m.mu.RLock()
-	svc, exists := m.services[name]
+	serviceName := m.getServiceName(name)
+	svc, exists := m.services[serviceName]
 	m.mu.RUnlock()
 
 	if !exists {
@@ -119,6 +142,10 @@ func (m *Manager) Start(name string) error {
 		errChan <- svc.Run()
 	}()
 
+	status, err := svc.Status()
+	fmt.Println("returning status", status)
+	fmt.Println("err", err)
+
 	// Wait a short time for any immediate errors
 	select {
 	case err := <-errChan:
@@ -129,24 +156,50 @@ func (m *Manager) Start(name string) error {
 	}
 }
 
+// grandmother claude
+// Status gets the status of a service
+func (m *Manager) Status(name string) (service.Status, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// If not found in our managed services, try to find it in system services
+	// First try to find it in our managed services
+	serviceName := m.getServiceName(name)
+	if svc, exists := m.services[serviceName]; exists {
+		fmt.Println("found in managed services", svc.String())
+
+		status, err := svc.Status()
+		if err != nil {
+
+			fmt.Println("error", err)
+			return status, err
+		}
+		fmt.Println("returning status", status)
+
+		return svc.Status()
+	}
+
+	return service.StatusUnknown, fmt.Errorf("service not found")
+}
+
+// Stop stops a service
 func (m *Manager) Stop(name string) error {
 	m.mu.RLock()
 	svc, exists := m.services[name]
 	m.mu.RUnlock()
 
 	if !exists {
+		// Try to find it in system services
+		service.ChooseSystem()
+
+		serviceName := m.getServiceName(name)
+		svcConfig := &service.Config{Name: serviceName}
+
+		if s, err := service.New(nil, svcConfig); err == nil {
+			return s.Stop()
+		}
 		return fmt.Errorf("service %s not installed", name)
 	}
+
 	return svc.Stop()
-}
-
-func (m *Manager) Status(name string) (service.Status, error) {
-	m.mu.RLock()
-	svc, exists := m.services[name]
-	m.mu.RUnlock()
-
-	if !exists {
-		return service.Status(0), fmt.Errorf("service %s not installed", name)
-	}
-	return svc.Status()
 }

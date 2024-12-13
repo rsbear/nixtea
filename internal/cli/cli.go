@@ -17,6 +17,7 @@ import (
 
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
+	"github.com/kardianos/service"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -247,12 +248,31 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 		Short: "Show package status and metrics",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+
 			pkgKey := args[0]
-			cmd.Printf("Will show status for package: %s\n", pkgKey)
-			cmd.Println("- Process info")
-			cmd.Println("- Metrics")
-			cmd.Println("- Recent logs")
+
+			// Try getting service status
+			status, err := svcMgr.Status(pkgKey)
+			if err != nil {
+				cmd.Printf("Service %s is not installed\n", pkgKey)
+				cmd.Println("To install and start the service:")
+				cmd.Printf("  nixtea %s run\n", pkgKey)
+				return nil
+			}
+
+			// Display status information
+			cmd.Printf("Service: %s\n", pkgKey)
+			switch status {
+			case service.StatusRunning:
+				cmd.Println("Status: Running")
+			case service.StatusStopped:
+				cmd.Println("Status: Stopped")
+			default:
+				cmd.Printf("Status: %s\n", status)
+			}
+
 			return nil
+
 		},
 	}
 
