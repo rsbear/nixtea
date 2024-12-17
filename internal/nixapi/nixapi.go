@@ -221,7 +221,7 @@ func (c *Client) BuildPkg(repoURL, pkgKey string) (*BuildResult, error) {
 	log.Info("Building package", "repo", repoURL, "key", pkgKey)
 
 	fullPkgURL := fmt.Sprintf("%s#%s", repoURL, pkgKey)
-	buildCmd := exec.Command("nix", "build", "--no-write-lock-file", "--print-out-paths", fullPkgURL)
+	buildCmd := exec.Command("nix", "build", "--print-out-paths", fullPkgURL)
 
 	outBytes, err := buildCmd.CombinedOutput()
 	if err != nil {
@@ -266,8 +266,8 @@ func (c *Client) BuildPkg(repoURL, pkgKey string) (*BuildResult, error) {
 func (c *Client) BuildPackage(repoURL, pkgKey string) (*BuildResult, error) {
 	log.Info("Building package", "repo", repoURL, "key", pkgKey)
 
-	// Build the package using the remote flake directly
-	cmd := exec.Command("nix", "build", "--no-write-lock-file", "--print-out-paths",
+	cmd := exec.Command("nix", "build",
+		"--print-out-paths", "--no-write-lock-file",
 		fmt.Sprintf("%s#%s", repoURL, pkgKey))
 
 	output, err := cmd.CombinedOutput()
@@ -275,39 +275,16 @@ func (c *Client) BuildPackage(repoURL, pkgKey string) (*BuildResult, error) {
 		return nil, fmt.Errorf("build failed: %w\nOutput: %s", err, string(output))
 	}
 
-	storePath := strings.TrimSpace(string(output))
-	log.Info("Build successful", "storePath", storePath)
-	if storePath == "" {
-		return nil, fmt.Errorf("empty store path returned")
+	// Find the nix store path in the output
+	for _, line := range strings.Split(string(output), "\n") {
+		if strings.HasPrefix(line, "/nix/store/") {
+			return &BuildResult{
+				StorePath:  line,
+				BinaryPath: line,
+			}, nil
+		}
 	}
 
-	// First check if there's a binary in the store path directly
-	if stat, err := os.Stat(storePath); err == nil && !stat.IsDir() {
-		return &BuildResult{
-			StorePath:  storePath,
-			BinaryPath: storePath,
-		}, nil
-	}
-
-	// If not, then check bin directory
-	binDir := filepath.Join(storePath, "bin")
-	entries, err := os.ReadDir(binDir)
-	if err != nil {
-		// If no bin directory, the store path itself might be the binary
-		return &BuildResult{
-			StorePath:  storePath,
-			BinaryPath: storePath,
-		}, nil
-	}
-
-	if len(entries) == 0 {
-		return nil, fmt.Errorf("no binaries found in %s", binDir)
-	}
-
-	binaryPath := filepath.Join(binDir, entries[0].Name())
-	return &BuildResult{
-		StorePath:  storePath,
-		BinaryPath: binaryPath,
-	}, nil
+	return nil, fmt.Errorf("no store path found in build output")
 
 }
