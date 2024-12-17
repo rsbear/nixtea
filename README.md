@@ -3,11 +3,13 @@
 
 
 ### cli to make
-    ssh nixtea ctx (lists saved repos, add repo input, set active repo)
+    ssh nixtea ctx add "github.com/rsbear/nixtea" (adds a context)
+    ssh nixtea ctx ls (lists contexts)
+    ssh nixtea ctx rm <ctx name> (removes a context)
     ssh nixtea ps (lists packages for a repo)
-    ssh nixtea <pkg key> run (starts the child process)
-    ssh nixtea <pkg key> stop (stops the child process)
-    ssh nixtea <pkg key> status (prints table of metrics and last 10 log lines
-    ssh nixtea <pkg key> logs (open an unterminated log viewing session, esc to quit)
+    ssh nixtea run <pkg key> (starts the child process)
+    ssh nixtea stop <pkg key> (stops the child process)
+    ssh nixtea status <pkg key> (prints table of metrics and last 10 log lines
+    ssh nixtea logs <pkg key> (open an unterminated log viewing session, esc to quit)
 
 

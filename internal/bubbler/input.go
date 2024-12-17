@@ -18,8 +18,10 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		if m.inputState.focused {
-			if err := m.db.SaveRepoURL(m.inputState.urlInput); err != nil {
-				m.inputState.errorMsg = fmt.Sprintf("Failed to save: %v", err)
+
+			_, erro := m.db.GetRepos()
+			if erro != nil {
+				m.inputState.errorMsg = fmt.Sprintf("Failed to get repos: %v", erro)
 				return m, nil
 			}
 

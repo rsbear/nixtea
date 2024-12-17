@@ -76,8 +76,9 @@ func (m repoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			i, ok := m.list.SelectedItem().(repoItem)
 			if ok {
 				m.choice = string(i)
-				// Save the selected repo as the active one
-				if err := m.db.SaveRepoURL(string(i)); err != nil {
+
+				_, err := m.db.SaveRepo(string(i))
+				if err != nil {
 					// Handle error gracefully in the view
 					m.choice = "error:" + err.Error()
 				}

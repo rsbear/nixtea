@@ -40,6 +40,107 @@ func titleBlock() string {
 	return ns.PaddingLeft(2).PaddingTop(1).PaddingBottom(0).Render("Nixtea")
 }
 
+// ctxUpdateCmd creates the 'ctx update' command
+func ctxUpdateCmd(cfg *config.Config, db *db.DB, svcMgr *svc.Manager) *cobra.Command {
+	return &cobra.Command{
+		Use:   "update",
+		Short: "Update and rebuild all packages from current repository",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Create a new Nix client
+			client := nixapi.NewClient()
+			defer client.Close()
+
+			// Step 1: Get current repo URL
+			url, err := db.GetRepoURL()
+			if err != nil {
+				return fmt.Errorf("failed to get repository URL: %w", err)
+			}
+			if url == "" {
+				return fmt.Errorf("no repository set. Use 'nixtea ctx add' to set a repository")
+			}
+			cmd.Printf("→ Found active repository: %s\n", url)
+
+			// Step 2: Update flake
+			// cmd.Printf("→ Updating flake...\n")
+			// if err := client.UpdateFlake(url); err != nil {
+			// 	return fmt.Errorf("failed to update flake: %w", err)
+			// }
+			// cmd.Printf("✓ Flake updated\n")
+
+			// Step 3: Get all available packages
+			packages, err := client.GetSystemPackages(url)
+			if err != nil {
+				return fmt.Errorf("step 3: failed to get packages: %w", err)
+			}
+			cmd.Printf("→ Found %d packages\n", len(packages))
+
+			// Step 4: Build and install each package
+			for key, pkg := range packages {
+				cmd.Printf("\nProcessing package: %s (%s)\n", pkg.Name, key)
+
+				// Check if service exists and get its status
+				status, err := svcMgr.Status(key)
+				wasRunning := err == nil && status == service.StatusRunning
+
+				if err == nil {
+					// Service exists, we need to stop it first
+					cmd.Printf("  → Stopping existing service...\n")
+					if err := svcMgr.Stop(key); err != nil {
+						cmd.Printf("  ! Warning: Failed to stop service: %v\n", err)
+					}
+				}
+
+				// Build the package
+				buildResult, err := client.BuildPackage(url, key)
+				if err != nil {
+					cmd.Printf("  ✗ Build failed: %v\n", err)
+					continue
+				}
+				cmd.Printf("  ✓ Built successfully: %s\n", buildResult.StorePath)
+
+				// Install service
+				cmd.Printf("  → Installing service...\n")
+				if err := svcMgr.Install(key, buildResult.BinaryPath); err != nil {
+					cmd.Printf("  ✗ Failed to install service: %v\n", err)
+					continue
+				}
+				cmd.Printf("  ✓ Service installed\n")
+
+				// Restart service if it was running before
+				if wasRunning {
+					cmd.Printf("  → Restarting service...\n")
+					if err := svcMgr.Start(key); err != nil {
+						cmd.Printf("  ✗ Failed to restart service: %v\n", err)
+						continue
+					}
+					cmd.Printf("  ✓ Service restarted\n")
+				}
+			}
+
+			cmd.Println("\n✓ Update complete!")
+			return nil
+		},
+	}
+}
+
+// Helper function to create ctx add command
+func ctxAddCmd(cfg *config.Config, db *db.DB) *cobra.Command {
+	return &cobra.Command{
+		Use:   "add [url]",
+		Short: "Add a new repository",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			url := args[0]
+			repo, err := db.SaveRepo(url)
+			if err != nil {
+				return fmt.Errorf("failed to save repository: %w", err)
+			}
+			cmd.Printf("Added repository %s\n", repo.URL)
+			return nil
+		},
+	}
+}
+
 func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr *svc.Manager) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "nixtea",
@@ -77,27 +178,8 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 		},
 	}
 
-	// ctx add - add a new repository
-	ctxAddCmd := &cobra.Command{
-		Use:   "add [url]",
-		Short: "Add a new repository",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			url := args[0]
-
-			// Save the repository
-			repo, err := db.SaveRepo(url)
-			if err != nil {
-				return fmt.Errorf("failed to save repository: %w", err)
-			}
-
-			cmd.Printf("Added repository %s\n", repo.URL)
-			return nil
-		},
-	}
-
 	// Add subcommands to ctx command
-	ctxCmd.AddCommand(ctxAddCmd)
+	ctxCmd.AddCommand(ctxAddCmd(cfg, db), ctxUpdateCmd(cfg, db, svcMgr))
 
 	// pks - list packages
 	pksCmd := &cobra.Command{

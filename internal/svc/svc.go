@@ -1,205 +1,205 @@
-// file: internal/svc/svc.go
-
 package svc
 
 import (
 	"fmt"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/kardianos/service"
 )
 
-type Program struct {
-	binPath   string
-	cmd       *exec.Cmd
-	quit      chan struct{}
-	startTime time.Time
+// ServiceConfig holds the configuration for a service
+type ServiceConfig struct {
+	Name        string
+	DisplayName string
+	Description string
+	Executable  string
 }
 
-type ResourceUsage struct {
-	Memory string
-	CPU    string
-}
-
-func NewProgram(binPath string) *Program {
-	return &Program{
-		binPath: binPath,
-		quit:    make(chan struct{}),
-	}
-}
-
-// Start implements service.Interface
-func (p *Program) Start(s service.Service) error {
-	// Start in a goroutine so it doesn't block
-	p.startTime = time.Now() // Set the start time when service starts
-	go p.run()
-	return nil
-}
-
-// Stop implements service.Interface
-func (p *Program) Stop(s service.Service) error {
-	close(p.quit)
-	if p.cmd != nil && p.cmd.Process != nil {
-		return p.cmd.Process.Signal(os.Interrupt)
-	}
-	return nil
-}
-
-func (p *Program) run() {
-	cmd := exec.Command(p.binPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	p.cmd = cmd
-
-	// Start the command (non-blocking)
-	if err := cmd.Start(); err != nil {
-		fmt.Printf("Failed to start process: %v\n", err)
-		return
-	}
-
-	// Wait for either quit signal or process completion
-	go func() {
-		<-p.quit
-		if p.cmd != nil && p.cmd.Process != nil {
-			p.cmd.Process.Signal(os.Interrupt)
-		}
-	}()
-
-	// Wait for process in a separate goroutine
-	go func() {
-		if err := cmd.Wait(); err != nil {
-			fmt.Printf("Process exited with error: %v\n", err)
-		}
-	}()
-}
-
+// Manager handles service lifecycle operations
 type Manager struct {
-	mu       sync.RWMutex
-	services map[string]service.Service
+	mu          sync.RWMutex
+	services    map[string]service.Service
+	configCache map[string]*service.Config
 }
 
+// NewManager creates a new service manager
 func NewManager() *Manager {
 	return &Manager{
-		services: make(map[string]service.Service),
+		services:    make(map[string]service.Service),
+		configCache: make(map[string]*service.Config),
 	}
 }
 
-// getServiceName ensures consistent service name formatting
-func (m *Manager) getServiceName(name string) string {
-	// If it already has the prefix, don't add it again
-	if strings.HasPrefix(name, "nixtea-") {
-		return name
+// formatServiceName ensures consistent service naming
+func formatServiceName(name string) string {
+	// Ensure the name starts with our prefix
+	if !strings.HasPrefix(name, "nixtea-") {
+		name = "nixtea-" + name
 	}
-	return "nixtea-" + name
+	// Sanitize the name by replacing invalid characters
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, ".", "-")
+	return name
 }
 
-func (m *Manager) Install(name, binPath string) error {
+// Install creates and registers a new service
+func (m *Manager) Install(name, execPath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	serviceName := m.getServiceName(name)
+	serviceName := formatServiceName(name)
+	log.Info("Installing service", "name", serviceName, "exec", execPath)
 
-	if _, err := os.Stat(binPath); err != nil {
-		return fmt.Errorf("binary not found at %s: %w", binPath, err)
+	// Verify the executable exists
+	if _, err := os.Stat(execPath); err != nil {
+		return fmt.Errorf("executable not found at %s: %w", execPath, err)
 	}
 
-	program := NewProgram(binPath)
-	config := &service.Config{
-		Name:        serviceName,
-		Description: fmt.Sprintf("Nix package service for %s", name),
-		Executable:  binPath,
+	// Create program config
+	svcConfig := &service.Config{
+		Name:             serviceName,
+		DisplayName:      fmt.Sprintf("Nixtea - %s", name),
+		Description:      fmt.Sprintf("Nix package service for %s", name),
+		Executable:       execPath,
+		WorkingDirectory: filepath.Dir(execPath),
+		Option: service.KeyValue{
+			// Ensure service restarts on failure
+			"Restart":        "always",
+			"RestartSec":     "10",
+			"StandardOutput": "journal",
+			"StandardError":  "journal",
+		},
 	}
 
-	svc, err := service.New(program, config)
+	// Create the service
+	svc, err := service.New(nil, svcConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
 
-	fmt.Println("service.New success serviceName", serviceName)
-
+	// Store the service and its config
 	m.services[serviceName] = svc
-	svc.Platform()
+	m.configCache[serviceName] = svcConfig
+
+	// Uninstall any existing service before installing
+	if err := svc.Uninstall(); err != nil && !strings.Contains(err.Error(), "not installed") {
+		log.Warn("Failed to uninstall existing service", "error", err)
+	}
+
+	// Install the new service
+	if err := svc.Install(); err != nil {
+		return fmt.Errorf("failed to install service: %w", err)
+	}
+
+	log.Info("Service installed successfully", "name", serviceName)
 	return nil
 }
 
+// Start starts a service
 func (m *Manager) Start(name string) error {
-	m.mu.RLock()
-	serviceName := m.getServiceName(name)
-	svc, exists := m.services[serviceName]
-	m.mu.RUnlock()
-
-	if !exists {
-		return fmt.Errorf("service %s not installed", name)
-	}
-
-	// Start the service in a goroutine
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- svc.Run()
-	}()
-
-	status, err := svc.Status()
-	fmt.Println("returning status", status)
-	fmt.Println("err", err)
-
-	// Wait a short time for any immediate errors
-	select {
-	case err := <-errChan:
-		return fmt.Errorf("service failed to start: %w", err)
-	case <-time.After(100 * time.Millisecond):
-		// If no immediate error, assume service started successfully
-		return nil
-	}
-}
-
-// grandmother claude
-// Status gets the status of a service
-func (m *Manager) Status(name string) (service.Status, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	// If not found in our managed services, try to find it in system services
-	// First try to find it in our managed services
-	serviceName := m.getServiceName(name)
-	if svc, exists := m.services[serviceName]; exists {
-		fmt.Println("found in managed services", svc.String())
-
-		status, err := svc.Status()
-		if err != nil {
-
-			fmt.Println("error", err)
-			return status, err
+	serviceName := formatServiceName(name)
+	svc, exists := m.services[serviceName]
+	if !exists {
+		// Try to load existing service
+		if cfg, ok := m.configCache[serviceName]; ok {
+			var err error
+			svc, err = service.New(nil, cfg)
+			if err != nil {
+				return fmt.Errorf("failed to load service: %w", err)
+			}
+		} else {
+			return fmt.Errorf("service %s not installed", name)
 		}
-		fmt.Println("returning status", status)
-
-		return svc.Status()
 	}
 
-	return service.StatusUnknown, fmt.Errorf("service not found")
+	log.Info("Starting service", "name", serviceName)
+	return svc.Start()
 }
 
 // Stop stops a service
 func (m *Manager) Stop(name string) error {
 	m.mu.RLock()
-	svc, exists := m.services[name]
-	m.mu.RUnlock()
+	defer m.mu.RUnlock()
 
+	serviceName := formatServiceName(name)
+	svc, exists := m.services[serviceName]
 	if !exists {
-		// Try to find it in system services
-		service.ChooseSystem()
-
-		serviceName := m.getServiceName(name)
-		svcConfig := &service.Config{Name: serviceName}
-
-		if s, err := service.New(nil, svcConfig); err == nil {
-			return s.Stop()
+		// Try to load existing service
+		if cfg, ok := m.configCache[serviceName]; ok {
+			var err error
+			svc, err = service.New(nil, cfg)
+			if err != nil {
+				return fmt.Errorf("failed to load service: %w", err)
+			}
+		} else {
+			return fmt.Errorf("service %s not installed", name)
 		}
-		return fmt.Errorf("service %s not installed", name)
 	}
 
+	log.Info("Stopping service", "name", serviceName)
 	return svc.Stop()
+}
+
+// Status gets the status of a service
+func (m *Manager) Status(name string) (service.Status, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	serviceName := formatServiceName(name)
+	svc, exists := m.services[serviceName]
+	if !exists {
+		// Try to load existing service
+		if cfg, ok := m.configCache[serviceName]; ok {
+			var err error
+			svc, err = service.New(nil, cfg)
+			if err != nil {
+				return service.StatusUnknown, fmt.Errorf("failed to load service: %w", err)
+			}
+		} else {
+			return service.StatusUnknown, fmt.Errorf("service %s not installed", name)
+		}
+	}
+
+	return svc.Status()
+}
+
+// Uninstall removes a service
+func (m *Manager) Uninstall(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	serviceName := formatServiceName(name)
+	svc, exists := m.services[serviceName]
+	if !exists {
+		// Try to load existing service
+		if cfg, ok := m.configCache[serviceName]; ok {
+			var err error
+			svc, err = service.New(nil, cfg)
+			if err != nil {
+				return fmt.Errorf("failed to load service: %w", err)
+			}
+		} else {
+			return fmt.Errorf("service %s not installed", name)
+		}
+	}
+
+	log.Info("Uninstalling service", "name", serviceName)
+	if err := svc.Stop(); err != nil {
+		log.Warn("Failed to stop service before uninstall", "error", err)
+	}
+
+	if err := svc.Uninstall(); err != nil {
+		return fmt.Errorf("failed to uninstall service: %w", err)
+	}
+
+	delete(m.services, serviceName)
+	delete(m.configCache, serviceName)
+	return nil
 }
