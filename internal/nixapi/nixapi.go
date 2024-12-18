@@ -221,11 +221,43 @@ func (c *Client) BuildPkg(repoURL, pkgKey string) (*BuildResult, error) {
 	log.Info("Building package", "repo", repoURL, "key", pkgKey)
 
 	fullPkgURL := fmt.Sprintf("%s#%s", repoURL, pkgKey)
-	buildCmd := exec.Command("nix", "build", "--print-out-paths", fullPkgURL)
+	buildCmd := exec.Command("nix", "build", "--no-write-lock-file", "--print-out-paths", fullPkgURL)
 
 	outBytes, err := buildCmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("build failed: %w\nOutput: %s", err, string(outBytes))
+	}
+
+	// Find the nix store path in the output
+	for _, line := range strings.Split(string(outBytes), "\n") {
+		if strings.HasPrefix(line, "/nix/store/") {
+
+			// Find the binary
+			binDir := filepath.Join(line, "bin")
+			entries, err := os.ReadDir(binDir)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read bin directory: %w", err)
+			}
+
+			if len(entries) == 0 {
+				return nil, fmt.Errorf("no binaries found in %s", binDir)
+			}
+
+			if len(entries) > 1 {
+				var binNames []string
+				for _, entry := range entries {
+					binNames = append(binNames, entry.Name())
+				}
+				return nil, fmt.Errorf("multiple binaries found in %s: %v", binDir, binNames)
+			}
+
+			binaryPath := filepath.Join(binDir, entries[0].Name())
+
+			return &BuildResult{
+				StorePath:  binaryPath,
+				BinaryPath: binaryPath,
+			}, nil
+		}
 	}
 
 	storePath := strings.TrimSpace(string(outBytes))

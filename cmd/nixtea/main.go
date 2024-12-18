@@ -13,6 +13,7 @@ import (
 	"walross/nixtea/internal/cli"
 	"walross/nixtea/internal/config"
 	"walross/nixtea/internal/supervisor"
+	"walross/nixtea/internal/suprvisor"
 	"walross/nixtea/internal/svc"
 
 	"github.com/charmbracelet/log"
@@ -34,12 +35,13 @@ func main() {
 	}
 	svcMngr := svc.NewManager()
 	sv := supervisor.NewSupervisor()
+	sp := suprvisor.NewSupervisor()
 
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(cfg.Host, cfg.Port)),
 		wish.WithHostKeyPath(cfg.HostKeyPath),
 		wish.WithMiddleware(
-			cli.CreateMiddleware(sv, cfg, svcMngr),
+			cli.CreateMiddleware(sv, cfg, svcMngr, sp),
 			bubbler.BubblerMiddleware(sv, cfg),
 			logging.Middleware(),
 		),

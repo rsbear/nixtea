@@ -3,7 +3,9 @@ package svc
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -46,10 +48,43 @@ func formatServiceName(name string) string {
 	return name
 }
 
+// elevatePrivileges handles privilege elevation based on the platform
+func (m *Manager) elevatePrivileges() error {
+	if runtime.GOOS != "linux" {
+		return nil // Only Linux needs explicit privilege elevation
+	}
+
+	// Check if we're already root
+	if os.Geteuid() == 0 {
+		return nil
+	}
+
+	// Get the path to the current executable
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	// Restart the current process with sudo
+	cmd := exec.Command(exe)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Env = os.Environ()
+
+	return cmd.Run()
+}
+
 // Install creates and registers a new service
 func (m *Manager) Install(name, execPath string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// In cli.go where we install the service
+	workDir := filepath.Join(os.TempDir(), fmt.Sprintf("nixtea-%s", name))
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		log.Debug("Failed to create work directory", "error", err)
+		return fmt.Errorf("failed to create work directory: %w", err)
+	}
 
 	serviceName := formatServiceName(name)
 	log.Info("Installing service", "name", serviceName, "exec", execPath)
@@ -59,20 +94,38 @@ func (m *Manager) Install(name, execPath string) error {
 		return fmt.Errorf("executable not found at %s: %w", execPath, err)
 	}
 
-	// Create program config
+	// Check if we need to elevate privileges
+	if err := m.elevatePrivileges(); err != nil {
+		return fmt.Errorf("failed to elevate privileges: %w", err)
+	}
+
+	// Create service configuration
 	svcConfig := &service.Config{
-		Name:             serviceName,
-		DisplayName:      fmt.Sprintf("Nixtea - %s", name),
-		Description:      fmt.Sprintf("Nix package service for %s", name),
-		Executable:       execPath,
-		WorkingDirectory: filepath.Dir(execPath),
-		Option: service.KeyValue{
-			// Ensure service restarts on failure
-			"Restart":        "always",
-			"RestartSec":     "10",
-			"StandardOutput": "journal",
-			"StandardError":  "journal",
+		Name:        serviceName,
+		DisplayName: fmt.Sprintf("Nixtea - %s", name),
+		Description: fmt.Sprintf("Nix package service for %s", name),
+		Executable:  execPath,
+		Dependencies: []string{
+			"Requires=network.target",
+			"After=network-online.target",
+			"After=nix-daemon.service", // Since we're running nix packages
 		},
+		Option: service.KeyValue{
+			"Restart":          "always",
+			"RestartSec":       "10",
+			"WorkingDirectory": filepath.Dir(workDir),
+		},
+	}
+
+	// Add platform-specific options
+	switch runtime.GOOS {
+	case "linux":
+		// svcConfig.Option["StandardOutput"] = "journal"
+		// svcConfig.Option["StandardError"] = "journal"
+		svcConfig.Option["Type"] = "simple"
+	case "darwin":
+		svcConfig.Option["KeepAlive"] = true
+		svcConfig.Option["RunAtLoad"] = true
 	}
 
 	// Create the service
@@ -81,19 +134,22 @@ func (m *Manager) Install(name, execPath string) error {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
 
-	// Store the service and its config
-	m.services[serviceName] = svc
-	m.configCache[serviceName] = svcConfig
-
-	// Uninstall any existing service before installing
-	if err := svc.Uninstall(); err != nil && !strings.Contains(err.Error(), "not installed") {
-		log.Warn("Failed to uninstall existing service", "error", err)
+	// Uninstall any existing service
+	if err := svc.Uninstall(); err != nil {
+		// Only log the error if it's not "service not installed"
+		if !strings.Contains(err.Error(), "not installed") {
+			log.Warn("Failed to uninstall existing service", "error", err)
+		}
 	}
 
 	// Install the new service
 	if err := svc.Install(); err != nil {
 		return fmt.Errorf("failed to install service: %w", err)
 	}
+
+	// Store the service and its config
+	m.services[serviceName] = svc
+	m.configCache[serviceName] = svcConfig
 
 	log.Info("Service installed successfully", "name", serviceName)
 	return nil
@@ -119,6 +175,10 @@ func (m *Manager) Start(name string) error {
 		}
 	}
 
+	if err := m.elevatePrivileges(); err != nil {
+		return fmt.Errorf("failed to elevate privileges: %w", err)
+	}
+
 	log.Info("Starting service", "name", serviceName)
 	return svc.Start()
 }
@@ -141,6 +201,10 @@ func (m *Manager) Stop(name string) error {
 		} else {
 			return fmt.Errorf("service %s not installed", name)
 		}
+	}
+
+	if err := m.elevatePrivileges(); err != nil {
+		return fmt.Errorf("failed to elevate privileges: %w", err)
 	}
 
 	log.Info("Stopping service", "name", serviceName)
@@ -178,7 +242,7 @@ func (m *Manager) Uninstall(name string) error {
 	serviceName := formatServiceName(name)
 	svc, exists := m.services[serviceName]
 	if !exists {
-		// Try to load existing service
+		// Try to recreate service from cache
 		if cfg, ok := m.configCache[serviceName]; ok {
 			var err error
 			svc, err = service.New(nil, cfg)
@@ -190,7 +254,11 @@ func (m *Manager) Uninstall(name string) error {
 		}
 	}
 
-	log.Info("Uninstalling service", "name", serviceName)
+	if err := m.elevatePrivileges(); err != nil {
+		return fmt.Errorf("failed to elevate privileges: %w", err)
+	}
+
+	// Stop the service first
 	if err := svc.Stop(); err != nil {
 		log.Warn("Failed to stop service before uninstall", "error", err)
 	}

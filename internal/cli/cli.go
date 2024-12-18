@@ -8,13 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"walross/nixtea/internal/config"
 	"walross/nixtea/internal/db"
-	"walross/nixtea/internal/nixapi"
 	"walross/nixtea/internal/supervisor"
+	"walross/nixtea/internal/suprvisor"
 	"walross/nixtea/internal/svc"
 
+	"github.com/charmbracelet/lipgloss/tree"
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	"github.com/kardianos/service"
@@ -41,16 +43,11 @@ func titleBlock() string {
 }
 
 // ctxUpdateCmd creates the 'ctx update' command
-func ctxUpdateCmd(cfg *config.Config, db *db.DB, svcMgr *svc.Manager) *cobra.Command {
+func ctxUpdateCmd(cfg *config.Config, db *db.DB, svcMgr *svc.Manager, sp *suprvisor.UnderSupervision) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
 		Short: "Update and rebuild all packages from current repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Create a new Nix client
-			client := nixapi.NewClient()
-			defer client.Close()
-
-			// Step 1: Get current repo URL
 			url, err := db.GetRepoURL()
 			if err != nil {
 				return fmt.Errorf("failed to get repository URL: %w", err)
@@ -60,64 +57,29 @@ func ctxUpdateCmd(cfg *config.Config, db *db.DB, svcMgr *svc.Manager) *cobra.Com
 			}
 			cmd.Printf("→ Found active repository: %s\n", url)
 
-			// Step 2: Update flake
-			// cmd.Printf("→ Updating flake...\n")
-			// if err := client.UpdateFlake(url); err != nil {
-			// 	return fmt.Errorf("failed to update flake: %w", err)
-			// }
-			// cmd.Printf("✓ Flake updated\n")
-
-			// Step 3: Get all available packages
-			packages, err := client.GetSystemPackages(url)
+			err = sp.Hydrate(url)
 			if err != nil {
-				return fmt.Errorf("step 3: failed to get packages: %w", err)
-			}
-			cmd.Printf("→ Found %d packages\n", len(packages))
-
-			// Step 4: Build and install each package
-			for key, pkg := range packages {
-				cmd.Printf("\nProcessing package: %s (%s)\n", pkg.Name, key)
-
-				// Check if service exists and get its status
-				status, err := svcMgr.Status(key)
-				wasRunning := err == nil && status == service.StatusRunning
-
-				if err == nil {
-					// Service exists, we need to stop it first
-					cmd.Printf("  → Stopping existing service...\n")
-					if err := svcMgr.Stop(key); err != nil {
-						cmd.Printf("  ! Warning: Failed to stop service: %v\n", err)
+				// Handle build errors
+				if buildErr, ok := err.(*suprvisor.BuildError); ok {
+					if len(buildErr.Success) > 0 {
+						cmd.Printf("\n✓ Successfully built packages:\n")
+						for _, key := range buildErr.Success {
+							cmd.Printf("  • %s\n", key)
+						}
 					}
-				}
-
-				// Build the package
-				buildResult, err := client.BuildPackage(url, key)
-				if err != nil {
-					cmd.Printf("  ✗ Build failed: %v\n", err)
-					continue
-				}
-				cmd.Printf("  ✓ Built successfully: %s\n", buildResult.StorePath)
-
-				// Install service
-				cmd.Printf("  → Installing service...\n")
-				if err := svcMgr.Install(key, buildResult.BinaryPath); err != nil {
-					cmd.Printf("  ✗ Failed to install service: %v\n", err)
-					continue
-				}
-				cmd.Printf("  ✓ Service installed\n")
-
-				// Restart service if it was running before
-				if wasRunning {
-					cmd.Printf("  → Restarting service...\n")
-					if err := svcMgr.Start(key); err != nil {
-						cmd.Printf("  ✗ Failed to restart service: %v\n", err)
-						continue
+					if len(buildErr.Failed) > 0 {
+						cmd.Printf("\n✗ Failed to build packages:\n")
+						for key, err := range buildErr.Failed {
+							cmd.Printf("  • %s: %v\n", key, err)
+						}
 					}
-					cmd.Printf("  ✓ Service restarted\n")
+					return nil // Don't propagate the error further
 				}
+				// Handle other errors
+				return fmt.Errorf("failed to hydrate: %w", err)
 			}
 
-			cmd.Println("\n✓ Update complete!")
+			cmd.Println("\n✓ All packages built successfully!")
 			return nil
 		},
 	}
@@ -141,7 +103,50 @@ func ctxAddCmd(cfg *config.Config, db *db.DB) *cobra.Command {
 	}
 }
 
-func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr *svc.Manager) *cobra.Command {
+func pksRunCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
+	return &cobra.Command{
+		Use:   "run [package]",
+		Short: "Run a package",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			pkgKey := args[0]
+
+			// Get current repository URL (needed if we have to hydrate)
+			url, err := db.GetRepoURL()
+			if err != nil {
+				return fmt.Errorf("failed to get repository URL: %w", err)
+			}
+			if url == "" {
+				return fmt.Errorf("no repository set. Use 'nixtea ctx add' to set a repository")
+			}
+
+			// If supervisor has no items, hydrate it first
+			if !sp.HasItems() {
+				cmd.Printf("→ Loading package state...\n")
+				if err := sp.Hydrate(url); err != nil {
+					return fmt.Errorf("failed to hydrate supervisor: %w", err)
+				}
+			}
+
+			// Run the package
+			cmd.Printf("→ Starting package %s...\n", pkgKey)
+			if err := sp.Run(pkgKey); err != nil {
+				cmd.Printf("✗ Failed to start package: %v\n", err)
+				return nil // Return nil to avoid double error message
+			}
+
+			cmd.Printf("✓ Package %s is now running\n\n", pkgKey)
+			cmd.Printf("To check package status:\n")
+			cmd.Printf("  nixtea pks status %s\n\n", pkgKey)
+			cmd.Printf("To view package logs:\n")
+			cmd.Printf("  nixtea pks logs %s\n", pkgKey)
+
+			return nil
+		},
+	}
+}
+
+func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr *svc.Manager, sp *suprvisor.UnderSupervision) *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:   "nixtea",
 		Short: "Nixtea is a Nix package runner",
@@ -179,45 +184,7 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 	}
 
 	// Add subcommands to ctx command
-	ctxCmd.AddCommand(ctxAddCmd(cfg, db), ctxUpdateCmd(cfg, db, svcMgr))
-
-	// pks - list packages
-	pksCmd := &cobra.Command{
-		Use:   "pks",
-		Short: "List available packages",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Get current repository URL
-			url, err := db.GetRepoURL()
-			if err != nil {
-				return fmt.Errorf("failed to get repository URL: %w", err)
-			}
-
-			if url == "" {
-				return fmt.Errorf("no repository set. Use 'nixtea ctx' to set a repository")
-			}
-
-			// Create a new nixapi client
-			client := nixapi.NewClient()
-
-			// Generate and print the tree
-			tree, err := formatPackagesTree(client, url)
-			if err != nil {
-				return err
-			}
-
-			nextSteps := "Next steps: ssh nixtea <pkg> <run/stop/status/logs>\n"
-
-			// Add some spacing around the tree
-			cmd.Println(titleBlock())
-			cmd.Println()
-			cmd.Println(tree)
-			cmd.Println()
-			cmd.Println(nextSteps)
-			cmd.Println()
-
-			return nil
-		},
-	}
+	ctxCmd.AddCommand(ctxAddCmd(cfg, db), ctxUpdateCmd(cfg, db, svcMgr, sp))
 
 	// <pkg> run - start package
 	runCmd := &cobra.Command{
@@ -391,10 +358,12 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 		},
 	}
 
+	pksCmd(cfg, db, sp).AddCommand(pksRunCmd(cfg, db, sp))
+
 	// Add all commands to root
 	rootCmd.AddCommand(ctxCmd)
+	rootCmd.AddCommand(pksCmd(cfg, db, sp))
 	rootCmd.AddCommand(helpCmd)
-	rootCmd.AddCommand(pksCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(stopCmd)
 	rootCmd.AddCommand(statusCmd)
@@ -424,8 +393,96 @@ func NewRootCmd(sv *supervisor.Supervisor, cfg *config.Config, db *db.DB, svcMgr
 // 	return err
 // }
 
+// formatPackagesTreeFromState creates a tree view from supervisor state
+func formatPackagesTreeFromState(sp *suprvisor.UnderSupervision) string {
+	// Get all items from supervisor
+	items := sp.GetSupervised()
+
+	// Sort packages by name for consistent display
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	// Create package entries with styled names
+	treeItems := make([]any, len(keys))
+	for i, key := range keys {
+		item := items[key]
+
+		// Create status indicator
+		var statusStyle lipgloss.Style
+		switch item.Status {
+		case "running":
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("42")) // green
+		case "stopped":
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")) // gray
+		case "build_failed":
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("196")) // red
+		default:
+			statusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("243")) // gray
+		}
+
+		treeItems[i] = fmt.Sprintf("%s %s %s",
+			item.Name,
+			hashStyle.Render("#"+key),
+			statusStyle.Render(item.Status),
+		)
+	}
+
+	// Build the tree
+	t := tree.Root("⚡ Nixtea Packages").
+		Child(treeItems...).
+		Enumerator(tree.RoundedEnumerator).
+		EnumeratorStyle(enumeratorStyle).
+		RootStyle(rootStyle).
+		ItemStyle(itmStyle)
+
+	return t.String()
+}
+
+// pksCmd creates the 'pks' command
+func pksCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
+	return &cobra.Command{
+		Use:   "pks",
+		Short: "List available packages",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Get current repository URL
+			url, err := db.GetRepoURL()
+			if err != nil {
+				return fmt.Errorf("failed to get repository URL: %w", err)
+			}
+
+			if url == "" {
+				return fmt.Errorf("no repository set. Use 'nixtea ctx' to set a repository")
+			}
+
+			// If supervisor has no items, hydrate it first
+			if !sp.HasItems() {
+				if err := sp.Hydrate(url); err != nil {
+					return fmt.Errorf("failed to hydrate supervisor: %w", err)
+				}
+			}
+
+			// Generate and print the tree
+			tree := formatPackagesTreeFromState(sp)
+			nextSteps := "Next steps: ssh nixtea <pkg> <run/stop/status/logs>\n"
+
+			// Add some spacing around the tree
+			cmd.Println(titleBlock())
+			cmd.Println()
+			cmd.Println(tree)
+			cmd.Println()
+			cmd.Println(nextSteps)
+			cmd.Println()
+
+			return nil
+		},
+	}
+}
+
 // CreateMiddleware creates a wish middleware that handles CLI commands
-func CreateMiddleware(sv *supervisor.Supervisor, cfg *config.Config, svcMngr *svc.Manager) wish.Middleware {
+func CreateMiddleware(sv *supervisor.Supervisor, cfg *config.Config, svcMngr *svc.Manager, sp *suprvisor.UnderSupervision) wish.Middleware {
 	return func(next ssh.Handler) ssh.Handler {
 		return func(sess ssh.Session) {
 			// If no command provided, continue to next middleware (TUI)
@@ -445,7 +502,7 @@ func CreateMiddleware(sv *supervisor.Supervisor, cfg *config.Config, svcMngr *sv
 			}
 
 			// Set up root command
-			rootCmd := NewRootCmd(sv, cfg, db, svcMngr)
+			rootCmd := NewRootCmd(sv, cfg, db, svcMngr, sp)
 			rootCmd.SetContext(ctx)
 			rootCmd.SetArgs(sess.Command())
 			rootCmd.SetIn(sess)
