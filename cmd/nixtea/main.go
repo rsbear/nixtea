@@ -9,12 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"walross/nixtea/internal/bubbler"
+	// "walross/nixtea/internal/bubbler"
 	"walross/nixtea/internal/cli"
 	"walross/nixtea/internal/config"
-	"walross/nixtea/internal/supervisor"
 	"walross/nixtea/internal/suprvisor"
-	"walross/nixtea/internal/svc"
 
 	"github.com/charmbracelet/log"
 	"github.com/charmbracelet/ssh"
@@ -33,16 +31,14 @@ func main() {
 		log.Error("Failed to initialize configuration", "error", err)
 		os.Exit(1)
 	}
-	svcMngr := svc.NewManager()
-	sv := supervisor.NewSupervisor()
 	sp := suprvisor.NewSupervisor()
 
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(cfg.Host, cfg.Port)),
 		wish.WithHostKeyPath(cfg.HostKeyPath),
 		wish.WithMiddleware(
-			cli.CreateMiddleware(sv, cfg, svcMngr, sp),
-			bubbler.BubblerMiddleware(sv, cfg),
+			cli.CreateMiddleware(cfg, sp),
+			// bubbler.BubblerMiddleware(sp, cfg),
 			logging.Middleware(),
 		),
 	)

@@ -51,47 +51,14 @@
           builtins.attrValues (builtins.mapAttrs (name: value: "export ${name}=\"${value}\"") vars)
         );
       in {
-        # devShells.default = mkGoDevShell {
-        #   cmd = "cd cmd/${name} && go run main.go";
-        #   hotReload = false;
-        #   extraPackages = with pkgs; [
-        #     nixpkgs-fmt
-        #   ];
-        #   env = env.local;
-        # };
-        devShells.default = pkgs.mkShell {
-            inherit name;
-            packages = with pkgs; [
-              go
-              gopls
-              nixpkgs-fmt
-            ];
-            shellHook = ''
-              export GOPATH=$PWD/go
-              export PATH=$PWD/go/bin:$PATH
-              export GO111MODULE=on
-              export GOPROXY=https://proxy.golang.org,direct
-              export GOSUMDB=off
-
-              # Set environment variables
-              ${mkExports env.local}
-
-              # Set GOPROXY
-              export GOPROXY=https://proxy.golang.org,direct
-
-              # Set GOSUMDB
-              export GOSUMDB=off
-
-              # Set GOPATH
-              export GOPATH=$PWD/go
-
-              # Set PATH
-              export PATH=$PWD/go/bin:$PATH
-
-              # Set GO111MODULE
-              export GO111MODULE=on
-            '';
-          };
+        devShells.default = mkGoDevShell {
+          cmd = "cd cmd/${name} && go run main.go";
+          hotReload = false;
+          extraPackages = with pkgs; [
+            nixpkgs-fmt
+          ];
+          env = env.local;
+        };
 
         packages.default = pkgs.buildGoModule {
           inherit name;

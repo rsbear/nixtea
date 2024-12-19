@@ -1,8 +1,8 @@
 package suprvisor
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os/exec"
 	"sync"
 	"syscall"
@@ -35,6 +35,8 @@ type ProcessState struct {
 	Cmd       *exec.Cmd
 	Done      chan error
 	StartTime time.Time
+	outReader *io.PipeReader
+	outWriter *io.PipeWriter
 }
 
 func (e *BuildError) Error() string {
@@ -121,81 +123,40 @@ func (s *UnderSupervision) Run(key string) error {
 		return fmt.Errorf("package %s not found", key)
 	}
 
-	// Check if already running
 	if runnable.Status == "running" {
 		return fmt.Errorf("package %s is already running", key)
 	}
 
-	// Check if build failed
-	if runnable.Status == "build_failed" {
-		return fmt.Errorf("package %s failed to build, cannot run", key)
-	}
-
-	// Check if we have a binary path
-	if runnable.BinaryPath == "" {
-		return fmt.Errorf("no binary path for package %s", key)
-	}
-
-	// Create command
 	cmd := exec.Command(runnable.BinaryPath)
-
-	// Create a new process group
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
 
-	// Set up stdout pipe
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stdout pipe: %w", err)
-	}
+	// Create pipe for output
+	outReader, outWriter := io.Pipe()
 
-	// Set up stderr pipe
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to create stderr pipe: %w", err)
-	}
+	// Set up command output
+	cmd.Stdout = outWriter
 
-	// Create process state
 	processState := &ProcessState{
 		Cmd:       cmd,
 		Done:      make(chan error, 1),
 		StartTime: time.Now(),
+		outReader: outReader,
+		outWriter: outWriter,
 	}
 
-	// Start the process
 	if err := cmd.Start(); err != nil {
+		outReader.Close()
+		outWriter.Close()
 		return fmt.Errorf("failed to start process: %w", err)
 	}
 
-	// Update state
 	s.mu.Lock()
 	runnable.process = processState
 	runnable.Status = "running"
 	runnable.PID = cmd.Process.Pid
 	s.mu.Unlock()
-
-	// Handle stdout in a goroutine
-	go func() {
-		scanner := bufio.NewScanner(stdout)
-		for scanner.Scan() {
-			log.Info("stdout",
-				"package", key,
-				"pid", cmd.Process.Pid,
-				"message", scanner.Text())
-		}
-	}()
-
-	// Handle stderr in a goroutine
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			log.Info("stderr",
-				"package", key,
-				"pid", cmd.Process.Pid,
-				"message", scanner.Text())
-		}
-	}()
 
 	// Monitor process in a goroutine
 	go func() {
@@ -206,20 +167,9 @@ func (s *UnderSupervision) Run(key string) error {
 		runnable.PID = 0
 		s.mu.Unlock()
 
-		log.Info("Process exited",
-			"package", key,
-			"error", err)
-
+		outWriter.Close()
 		processState.Done <- err
 	}()
-
-	log.Info("Process started",
-		"package", key,
-		"pid", cmd.Process.Pid,
-		"binary", runnable.BinaryPath)
-
-	// Debug state after starting
-	s.debugAfterOperation("run")
 
 	return nil
 }
@@ -288,6 +238,27 @@ func (s *UnderSupervision) Status(name string) (string, error) {
 	}
 
 	return item.Status, nil
+}
+
+// Add StreamOutput method to supervisor
+func (s *UnderSupervision) StreamOutput(key string) (io.Reader, error) {
+	s.mu.RLock()
+	runnable, exists := s.items[key]
+	s.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("package %s not found", key)
+	}
+
+	if runnable.Status != "running" || runnable.process == nil {
+		return nil, fmt.Errorf("package %s is not running", key)
+	}
+
+	if runnable.process.outReader == nil {
+		return nil, fmt.Errorf("no output available for package %s", key)
+	}
+
+	return runnable.process.outReader, nil
 }
 
 // ItemState represents the public state of a runnable item
