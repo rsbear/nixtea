@@ -1,6 +1,7 @@
 package suprvisor
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -111,6 +112,106 @@ func (s *UnderSupervision) Hydrate(repoURL string) error {
 	s.debugAfterOperation("hydrate")
 
 	return nil
+}
+
+// HydrateWithTimeout wraps Hydrate with timeout and debug logging
+func (s *UnderSupervision) HydrateWithTimeout(repoURL string, timeout time.Duration) error {
+	// Create a context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// Create channel for result
+	done := make(chan error, 1)
+
+	// Run Hydrate in goroutine with detailed logging
+	go func() {
+		log.Info("Starting hydration process", "repoURL", repoURL)
+
+		// Initialize Nix client
+		client := nixapi.NewClient()
+		defer client.Close()
+
+		log.Info("Fetching system packages")
+		packages, err := client.GetSystemPackages(repoURL)
+		if err != nil {
+			done <- fmt.Errorf("failed to get packages: %w", err)
+			return
+		}
+		log.Info("Retrieved packages", "count", len(packages))
+
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		// Reset items map
+		s.items = make(map[string]*Runnable)
+
+		buildError := &BuildError{
+			Failed:  make(map[string]error),
+			Success: make([]string, 0),
+		}
+
+		// Track progress
+		total := len(packages)
+		processed := 0
+
+		for key, pkg := range packages {
+			select {
+			case <-ctx.Done():
+				done <- fmt.Errorf("hydration timed out after %v", timeout)
+				return
+			default:
+				log.Info("Building package",
+					"name", pkg.Name,
+					"key", key,
+					"progress", fmt.Sprintf("%d/%d", processed+1, total))
+
+				runnable := &Runnable{
+					Name:   pkg.Name,
+					Status: "stopped",
+					PID:    0,
+				}
+				s.items[key] = runnable
+
+				buildResult, err := client.BuildPkg(repoURL, key)
+				if err != nil {
+					log.Error("Failed to build package",
+						"name", pkg.Name,
+						"key", key,
+						"error", err)
+					buildError.Failed[key] = err
+					runnable.buildError = err
+					runnable.Status = "build_failed"
+				} else {
+					runnable.BinaryPath = buildResult.BinaryPath
+					buildError.Success = append(buildError.Success, key)
+					log.Info("Successfully built package",
+						"name", pkg.Name,
+						"key", key,
+						"binary", buildResult.BinaryPath)
+				}
+				processed++
+			}
+		}
+
+		if len(buildError.Failed) > 0 {
+			done <- buildError
+			return
+		}
+
+		log.Info("Hydration completed successfully",
+			"total", total,
+			"succeeded", len(buildError.Success),
+			"failed", len(buildError.Failed))
+		done <- nil
+	}()
+
+	// Wait for either completion or timeout
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("hydration timed out after %v", timeout)
+	}
 }
 
 // Run starts a package by its key

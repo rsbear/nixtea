@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 	"walross/nixtea/internal/config"
 	"walross/nixtea/internal/db"
 	"walross/nixtea/internal/suprvisor"
@@ -53,7 +54,7 @@ func ctxUpdateCmd(db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
 			}
 			cmd.Printf("→ Found active repository: %s\n", url)
 
-			err = sp.Hydrate(url)
+			err = sp.HydrateWithTimeout(url, 5*time.Minute)
 			if err != nil {
 				// Handle build errors
 				if buildErr, ok := err.(*suprvisor.BuildError); ok {
@@ -119,7 +120,7 @@ func pksRunCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *c
 			// If supervisor has no items, hydrate it first
 			if !sp.HasItems() {
 				cmd.Printf("→ Loading package state...\n")
-				if err := sp.Hydrate(url); err != nil {
+				if err := sp.HydrateWithTimeout(url, 5*time.Minute); err != nil {
 					return fmt.Errorf("failed to hydrate supervisor: %w", err)
 				}
 			}
@@ -162,7 +163,7 @@ func pksStopCmd(sp *suprvisor.UnderSupervision, db *db.DB) *cobra.Command {
 			// If supervisor has no items, hydrate it first
 			if !sp.HasItems() {
 				cmd.Printf("→ Loading package state...\n")
-				if err := sp.Hydrate(url); err != nil {
+				if err := sp.HydrateWithTimeout(url, 5*time.Minute); err != nil {
 					return fmt.Errorf("failed to hydrate supervisor: %w", err)
 				}
 			}
@@ -266,7 +267,7 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 			// If supervisor has no items, hydrate it first
 			if !sp.HasItems() {
 				cmd.Printf("→ Loading package state...\n")
-				if err := sp.Hydrate(url); err != nil {
+				if err := sp.HydrateWithTimeout(url, 5*time.Minute); err != nil {
 					return fmt.Errorf("failed to hydrate supervisor: %w", err)
 				}
 			}
@@ -376,7 +377,7 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 			// If supervisor has no items, hydrate it first
 			if !sp.HasItems() {
 				cmd.Printf("→ Loading package state...\n")
-				if err := sp.Hydrate(url); err != nil {
+				if err := sp.HydrateWithTimeout(url, 5*time.Minute); err != nil {
 					return fmt.Errorf("failed to hydrate supervisor: %w", err)
 				}
 			}
@@ -470,7 +471,7 @@ func pksListCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 
 			// If supervisor has no items, hydrate it first
 			if !sp.HasItems() {
-				if err := sp.Hydrate(url); err != nil {
+				if err := sp.HydrateWithTimeout(url, 5*time.Minute); err != nil {
 					return fmt.Errorf("failed to hydrate supervisor: %w", err)
 				}
 			}
