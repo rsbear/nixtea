@@ -39,8 +39,8 @@ func titleBlock() string {
 	return ns.PaddingLeft(2).PaddingTop(1).PaddingBottom(0).Render("Nixtea")
 }
 
-// ctxUpdateCmd creates the 'ctx update' command
-func ctxUpdateCmd(db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
+// repoUpdateCmd creates the 'repo update' command
+func repoUpdateCmd(db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
 	return &cobra.Command{
 		Use:   "update",
 		Short: "Update and rebuild all packages from current repository",
@@ -82,8 +82,8 @@ func ctxUpdateCmd(db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
 	}
 }
 
-// Helper function to create ctx add command
-func ctxAddCmd(db *db.DB) *cobra.Command {
+// Helper function to create repo add command
+func repoAddCmd(db *db.DB) *cobra.Command {
 	return &cobra.Command{
 		Use:   "add [url]",
 		Short: "Add a new repository",
@@ -194,9 +194,9 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 		PaddingTop(1).
 		PaddingLeft(2)
 
-	// ctx - list/add/set repos
-	ctxCmd := &cobra.Command{
-		Use:   "ctx",
+	// repos - list
+	reposCmd := &cobra.Command{
+		Use:   "repos",
 		Short: "Manage repository contexts",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			url, err := db.GetRepoURL()
@@ -208,7 +208,7 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 			if url == "" {
 				output = "No repository set\n\n" +
 					"To set a repository:\n" +
-					"  nixtea ctx add <url>"
+					"  nixtea repo add <url>"
 			} else {
 				output = fmt.Sprintf("%s\n\n"+
 					"Next step is to run an output from the repo that was set\n"+
@@ -222,7 +222,7 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 	}
 
 	// Add subcommands to ctx command
-	ctxCmd.AddCommand(ctxAddCmd(db), ctxUpdateCmd(db, sp))
+	reposCmd.AddCommand(repoAddCmd(db), repoUpdateCmd(db, sp))
 
 	// help command
 	helpCmd := &cobra.Command{
@@ -233,13 +233,13 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 			cmd.Println("\nUsage:")
 			cmd.Println("  ssh nixtea <command>")
 			cmd.Println("\nCommands:")
-			cmd.Println("  ctx                List, add, or set active repositories")
-			cmd.Println("  pkgs               List packages from active repository")
-			cmd.Println("  <pkgs> run         Start a package")
-			cmd.Println("  <pkgs> stop        Stop a running package")
-			cmd.Println("  <pkgs> status      Show package status and metrics")
-			cmd.Println("  <pkgs> logs        Stream package logs (ESC to quit)")
-			cmd.Println("  help               Show this help message")
+			cmd.Println("  repos                  List, add, or set active repositories")
+			cmd.Println("  pkgs                   List packages from active repository")
+			cmd.Println("  pkgs run    <pkg-key>     Start a package")
+			cmd.Println("  pkgs stop   <pkg-key>    Stop a running package")
+			cmd.Println("  pkgs status <pkg-key>  Show package status and metrics")
+			cmd.Println("  pkgs logs   <pkg-key>    Stream package logs (ESC to quit)")
+			cmd.Println("  help                   Show this help message")
 			return nil
 		},
 	}
@@ -398,7 +398,7 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 	pkgsCmd.AddCommand(pkgRunCmd(cfg, db, sp), pkgsStatusCmd, pkgsStopCmd(sp, db), pkgsLogsCmd)
 
 	// Add all commands to root
-	rootCmd.AddCommand(ctxCmd)
+	rootCmd.AddCommand(reposCmd)
 	rootCmd.AddCommand(pkgsCmd)
 	rootCmd.AddCommand(helpCmd)
 
