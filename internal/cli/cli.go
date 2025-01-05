@@ -100,7 +100,7 @@ func ctxAddCmd(db *db.DB) *cobra.Command {
 	}
 }
 
-func pksRunCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
+func pkgRunCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
 	return &cobra.Command{
 		Use:   "run [package]",
 		Short: "Run a package",
@@ -134,16 +134,16 @@ func pksRunCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *c
 
 			cmd.Printf("✓ Package %s is now running\n\n", pkgKey)
 			cmd.Printf("To check package status:\n")
-			cmd.Printf("  nixtea pks status %s\n\n", pkgKey)
+			cmd.Printf("  nixtea pkgs status %s\n\n", pkgKey)
 			cmd.Printf("To view package logs:\n")
-			cmd.Printf("  nixtea pks logs %s\n", pkgKey)
+			cmd.Printf("  nixtea pkgs logs %s\n", pkgKey)
 
 			return nil
 		},
 	}
 }
 
-func pksStopCmd(sp *suprvisor.UnderSupervision, db *db.DB) *cobra.Command {
+func pkgsStopCmd(sp *suprvisor.UnderSupervision, db *db.DB) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop [package]",
 		Short: "Stop a running package",
@@ -177,7 +177,7 @@ func pksStopCmd(sp *suprvisor.UnderSupervision, db *db.DB) *cobra.Command {
 
 			cmd.Printf("✓ Package %s stopped successfully\n\n", pkgKey)
 			cmd.Printf("To check package status:\n")
-			cmd.Printf("  nixtea pks status %s\n", pkgKey)
+			cmd.Printf("  nixtea pkgs status %s\n", pkgKey)
 
 			return nil
 		},
@@ -213,7 +213,7 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 				output = fmt.Sprintf("%s\n\n"+
 					"Next step is to run an output from the repo that was set\n"+
 					"List the available packages with:\n"+
-					"  nixtea pks", url)
+					"  nixtea pkgs", url)
 			}
 
 			cmd.Println(outputStyle.Render(output))
@@ -233,25 +233,25 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 			cmd.Println("\nUsage:")
 			cmd.Println("  ssh nixtea <command>")
 			cmd.Println("\nCommands:")
-			cmd.Println("  ctx               List, add, or set active repositories")
-			cmd.Println("  pks                List packages from active repository")
-			cmd.Println("  <pkg> run         Start a package")
-			cmd.Println("  <pkg> stop        Stop a running package")
-			cmd.Println("  <pkg> status      Show package status and metrics")
-			cmd.Println("  <pkg> logs        Stream package logs (ESC to quit)")
-			cmd.Println("  help              Show this help message")
+			cmd.Println("  ctx                List, add, or set active repositories")
+			cmd.Println("  pkgs               List packages from active repository")
+			cmd.Println("  <pkgs> run         Start a package")
+			cmd.Println("  <pkgs> stop        Stop a running package")
+			cmd.Println("  <pkgs> status      Show package status and metrics")
+			cmd.Println("  <pkgs> logs        Stream package logs (ESC to quit)")
+			cmd.Println("  help               Show this help message")
 			return nil
 		},
 	}
 
-	pksCmd := &cobra.Command{
-		Use:   "pks",
+	pkgsCmd := &cobra.Command{
+		Use:   "pkgs",
 		Short: "Package management commands",
-		RunE:  pksListCmd(cfg, db, sp).RunE,
+		RunE:  pkgsListCmd(cfg, db, sp).RunE,
 	}
 
 	// Add this to NewRootCmd, alongside the other commands
-	pksStatusCmd := &cobra.Command{
+	pkgsStatusCmd := &cobra.Command{
 		Use:   "status [package]",
 		Short: "Show status of running packages",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -352,13 +352,13 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 
 			// Add help text at the bottom
 			cmd.Println("\nFor detailed status of a specific package:")
-			cmd.Printf("  nixtea pks status <package>\n")
+			cmd.Printf("  nixtea pkgs status <package>\n")
 
 			return nil
 		},
 	}
 
-	pksLogsCmd := &cobra.Command{
+	pkgsLogsCmd := &cobra.Command{
 		Use:   "logs [package]",
 		Short: "Stream logs from a package",
 		Args:  cobra.ExactArgs(1),
@@ -395,11 +395,11 @@ func NewRootCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *
 		},
 	}
 
-	pksCmd.AddCommand(pksRunCmd(cfg, db, sp), pksStatusCmd, pksStopCmd(sp, db), pksLogsCmd)
+	pkgsCmd.AddCommand(pkgRunCmd(cfg, db, sp), pkgsStatusCmd, pkgsStopCmd(sp, db), pkgsLogsCmd)
 
 	// Add all commands to root
 	rootCmd.AddCommand(ctxCmd)
-	rootCmd.AddCommand(pksCmd)
+	rootCmd.AddCommand(pkgsCmd)
 	rootCmd.AddCommand(helpCmd)
 
 	return rootCmd
@@ -453,10 +453,10 @@ func formatPackagesTreeFromState(sp *suprvisor.UnderSupervision) string {
 	return t.String()
 }
 
-// pksListCmd creates the 'pks' command
-func pksListCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
+// pkgsListCmd creates the 'pkgs' command
+func pkgsListCmd(cfg *config.Config, db *db.DB, sp *suprvisor.UnderSupervision) *cobra.Command {
 	return &cobra.Command{
-		Use:   "pks",
+		Use:   "pkgs",
 		Short: "List available packages",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Get current repository URL
